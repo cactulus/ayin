@@ -1,0 +1,13 @@
+.vscode/**
+.vs/**
+build/**
+bin/**
+*.vsidx
+*.sln
+*.user
+*.vcxproj
+temp_gen.c
+*.pbxproj
+*.xcworkspacedata
+Nia.xcodeproj/**
+.DS_STORE
