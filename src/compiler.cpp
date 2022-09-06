@@ -3,8 +3,14 @@
 #include "common.h"
 #include "lexer.h"
 #include "parser.h"
+#include "llvm.h"
 
 Compiler::Compiler() {
+    llvm_converter = new LLVM_Converter(this);
+    typer = new Typer(this);
+
+    global_scope = new Ast_Scope();
+
 	type_void = new Ast_Type_Info();
 	type_void->type = Ast_Type_Info::VOID;
 
@@ -25,9 +31,21 @@ Compiler::Compiler() {
     
     type_f32 = make_float_type(4);
     type_f64 = make_float_type(8);
+
+    atom_main = make_atom(to_string("main"));
 }
 
-Ast_Scope *Compiler::parse_file(String file_path) {
+void Compiler::run(String entry_file) {
+	parse_file(entry_file);
+
+	typer->type_check_scope(global_scope);
+	llvm_converter->convert_scope(global_scope);
+
+	llvm_converter->emit_llvm_ir();
+	// llvm_converter->emit_object_file();
+}
+
+void Compiler::parse_file(String file_path) {
 	String content;
 	read_entire_file(file_path, &content);
 
@@ -42,7 +60,8 @@ Ast_Scope *Compiler::parse_file(String file_path) {
 	lexer.tokenize();
 	
 	Parser parser(this, &lexer);
-	return parser.parse();
+	parser.current_scope = global_scope;
+	parser.parse();
 }
 
 Ast_Type_Info *Compiler::make_int_type(bool is_signed, s32 bytes) {
@@ -77,10 +96,11 @@ Atom *Compiler::make_atom(String name) {
 }
 
 void Compiler::report_error(Source_Location location, const char *fmt, va_list args) {
-	printf("aleph: \"%s\"(%lld:%lld): ", to_c_string(location.file), location.line, location.col);
+	printf("aleph: \"%s\"(%lld:%lld): ", to_c_string(location.file), location.line + 1, location.col + 1);
 	vprintf(fmt, args);
     printf("\n");
 
+#if 0
     String source = source_table.find_atom(location.file)->id;
 
 	s32 line = 0;
@@ -117,6 +137,7 @@ void Compiler::report_error(Source_Location location, const char *fmt, va_list a
 
 	putc('\n', stdout);
 
+#endif
 	errors_reported++;
 }
 
@@ -137,6 +158,9 @@ void Compiler::report_error(Ast *ast, const char *fmt, ...) {
 }
 
 int main(int argc, char *argv[]) {
+	Compiler compiler;
+
+	compiler.run(to_string("examples/example.alf"));
 
 	return 0;
 }

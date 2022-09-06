@@ -1,12 +1,14 @@
 workspace "aleph"
 	configurations { "Debug", "Release", "Dist" }
-	architecture "x64"
+	filter { "platforms:*32" } architecture "x86"
+  	filter { "platforms:*64" } architecture "x64"
 
 project "aleph"
 	kind "ConsoleApp"
 	language "C++"
 	targetdir "bin/%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 	objdir "build/%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
+	buildoptions { "-Wno-writable-strings" }
 
 	files { "src/*.h", "src/*.cpp" }
 
@@ -14,6 +16,14 @@ project "aleph"
 		cppdialect "C++17"
 		staticruntime "On"
 		systemversion "10.0.19041.0"
+
+	filter { "system:linux" }
+  		buildoptions { "`llvm-config --cxxflags`" }
+  		linkoptions { "`llvm-config --ldflags --libs core`" }
+
+	filter { "system:macosx" }
+  		buildoptions { "`llvm-config --cxxflags`" }
+  		linkoptions { "`llvm-config --ldflags --libs core`" }
 
 	filter "configurations:Debug"
 		defines { "ALEPH_DEBUG" }

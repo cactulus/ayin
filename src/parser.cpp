@@ -9,37 +9,33 @@ Parser::Parser(Compiler *compiler, Lexer *lexer) {
 	this->pos = 0;
 }
 
-Ast_Scope *Parser::parse() {
-	Ast_Scope *scope = AST_NEW(Ast_Scope);
-
+void Parser::parse() {
 	Token *t;
 	while ((t = peek())->type != Token::END_OF_FILE) {
-		scope->declarations.add(parse_global());
+		current_scope->declarations.add(parse_global());
 	}
-
-	return scope;
 }
 
-Ast_Declaration *Parser::parse_global() {
+Ast_Statement *Parser::parse_global() {
 	Token *t = peek();
 	
-	if (t->type == Token::STRUCT) {
+	if (expect_eat(Token::STRUCT)) {
 		return parse_struct_declaration();
 	}
 	
-	if (t->type == Token::ENUM) {
+	if (expect_eat(Token::ENUM)) {
 		return parse_enum_declaration();
 	}
 		
-	if (t->type == Token::ALIAS) {
+	if (expect_eat(Token::ALIAS)) {
 		return parse_type_alias();
 	}
 	
-	if (t->type == Token::FUNC) {
+	if (expect_eat(Token::FUNC)) {
 		return parse_function_declaration();
 	}
 
-	Ast_Declaration *var_decl = parse_variable_declaration();
+	Ast_Declaration *var_decl = parse_variable_declaration(true);
 	if (var_decl) {
 		return var_decl;
 	}
@@ -48,17 +44,17 @@ Ast_Declaration *Parser::parse_global() {
 	return 0;
 }
 
-Ast_Declaration *Parser::parse_struct_declaration() {
-	auto decl = AST_NEW(Ast_Declaration);
-	decl->declaration_type = Ast_Declaration::STRUCT;
+Ast_Struct *Parser::parse_struct_declaration() {
+	auto s = AST_NEW(Ast_Struct);
 
-	decl->identifier = parse_identifier();
-	if (!decl->identifier) {
-		compiler->report_error(decl->identifier, "Expected struct name");
+	s->identifier = parse_identifier();
+	if (!s->identifier) {
+		compiler->report_error(s->identifier, "Expected struct name");
 	}
 
 	Ast_Type_Info *struct_type = new Ast_Type_Info();
 	struct_type->type = Ast_Type_Info::STRUCT;
+	struct_type->struct_decl = s;
 
 	if (!expect_eat('{')) {
 		compiler->report_error(peek(), "Expected '{' after struct name");
@@ -71,19 +67,18 @@ Ast_Declaration *Parser::parse_struct_declaration() {
 		expect_eat(',');
 	}
 
-	decl->type_info = struct_type;
+	s->type_info = struct_type;
 	
-	return decl;
+	return s;
 }
 
-Ast_Declaration *Parser::parse_enum_declaration() {
-	auto decl = AST_NEW(Ast_Declaration);
-	decl->declaration_type = Ast_Declaration::ENUM;
+Ast_Enum *Parser::parse_enum_declaration() {
+	auto e = AST_NEW(Ast_Enum);
 
-	decl->identifier = parse_identifier();
+	e->identifier = parse_identifier();
 
-	if (!decl->identifier) {
-		compiler->report_error(decl->identifier, "Expected enum name");
+	if (!e->identifier) {
+		compiler->report_error(e->identifier, "Expected enum name");
 	}
 
 	Ast_Type_Info *enum_type = new Ast_Type_Info();
@@ -103,38 +98,119 @@ Ast_Declaration *Parser::parse_enum_declaration() {
 		expect_eat(',');
 	}
 
-	decl->type_info = enum_type;
+	e->type_info = enum_type;
 
-	return decl;
+	return e;
 }
 
-Ast_Declaration *Parser::parse_type_alias() {
-	auto decl = AST_NEW(Ast_Declaration);
-	decl->declaration_type = Ast_Declaration::TYPE;
+Ast_Type_Alias *Parser::parse_type_alias() {
+	auto ta = AST_NEW(Ast_Type_Alias);
 	
-	decl->identifier = parse_identifier();
-	if (!decl->identifier) {
-		compiler->report_error(decl->identifier, "Expected identifier for type alias");
+	ta->identifier = parse_identifier();
+	if (!ta->identifier) {
+		compiler->report_error(ta->identifier, "Expected identifier for type alias");
 	}
 
-	decl->type_info = parse_type_specifier();
+	ta->type_info = parse_type_specifier();
 
-	return decl;
+	return ta;
 }
 
-Ast_Declaration *Parser::parse_function_declaration() {
-	auto decl = AST_NEW(Ast_Declaration);
-	decl->declaration_type = Ast_Declaration::FUNCTION;
+Ast_Function *Parser::parse_function_declaration() {
+	auto fn = AST_NEW(Ast_Function);
 
-	
+	fn->identifier = parse_identifier();
+	if (!fn->identifier) {
+		compiler->report_error(fn->identifier, "Expected identifier for function name");
+	}
 
-	return decl;
+	Ast_Type_Info *type_info = new Ast_Type_Info();
+	type_info->type = Ast_Type_Info::FUNCTION;
+
+	push_scope();
+	fn->scope = current_scope;
+
+	if (expect_eat('<')) {
+		fn->is_template_function = true;
+		fn->template_scope = AST_NEW(Ast_Scope);
+
+		while (!expect_eat('>')) {
+			Ast_Type_Alias *alias = AST_NEW(Ast_Type_Alias);
+			alias->identifier = parse_identifier();
+			alias->type_info = new Ast_Type_Info();
+			alias->type_info->type = Ast_Type_Info::TYPE;
+
+			if (!alias->identifier) {
+				compiler->report_error(alias, "Expected template type name identifier");
+			}
+
+			fn->template_scope->declarations.add(alias);
+			current_scope->extension = fn->template_scope;
+		}
+	}
+
+	if (!expect_eat('(')) {
+		compiler->report_error(peek(), "Expected '(' after function name");
+	}
+
+	while (!expect_eat(')')) {
+		Ast_Declaration *par_decl = parse_variable_declaration();
+
+		if (par_decl->initializer) {
+			compiler->report_error(par_decl, "Can't initialize parameter");
+		}
+
+		type_info->parameter_types.add(par_decl);
+		current_scope->declarations.add(par_decl);
+
+		if (!expect(')')) {
+			if (!expect_eat(',')) {
+				compiler->report_error(peek(), "Expected ',' after parameter");
+			}
+		}
+	}
+
+	if (expect_eat('{')) {
+		type_info->return_type = compiler->type_void;
+	} else {
+		type_info->return_type = parse_type_specifier();
+
+		if (!expect_eat('{')) {
+			compiler->report_error(peek(), "Expected '{' after return type specifier");
+		}
+	}
+
+	fn->type_info = type_info;
+
+	while (!expect_eat('}')) {
+		Ast_Statement *statement_or_declaration = parse_declaration_or_statement();
+		if (!statement_or_declaration) {
+			return fn;
+		}
+
+		switch (statement_or_declaration->type) {
+			case Ast::DECLARATION:
+			case Ast::STRUCT:
+			case Ast::ENUM:
+			case Ast::TYPE_ALIAS:
+			case Ast::FUNCTION:
+				current_scope->declarations.add(statement_or_declaration);
+				break;
+			default:
+				current_scope->statements.add(statement_or_declaration);
+				break;
+
+		}
+	}
+
+	pop_scope();
+
+	return fn;
 }
 
-Ast_Declaration *Parser::parse_variable_declaration() {
+Ast_Declaration *Parser::parse_variable_declaration(bool expect_semicolon) {
 	Ast_Declaration *var_decl = AST_NEW(Ast_Declaration);
 
-	var_decl->declaration_type = Ast_Declaration::VARIABLE;
 	var_decl->identifier = parse_identifier();
 
 	if (!var_decl->identifier) {
@@ -150,8 +226,6 @@ Ast_Declaration *Parser::parse_variable_declaration() {
 
 			if (expect_eat('=')) {
 				var_decl->initializer = parse_expression();
-			} else {
-				var_decl->initializer = 0;
 			}
 		}
 	} else {
@@ -159,10 +233,93 @@ Ast_Declaration *Parser::parse_variable_declaration() {
 		return 0;
 	}
 
+	if (expect_semicolon) {
+		if (!expect_eat(';')) {
+			compiler->report_error(peek(), "Expected ';' after variable declaration");
+		}
+	}
+
+	return var_decl;
+}
+
+Ast_Statement *Parser::parse_declaration_or_statement() {
+	if (expect(Token::ATOM) && expect(':', 1)) {
+		return parse_variable_declaration(true);
+	}
+
+	if (expect(Token::RETURN)) {
+		Ast_Return *ret = AST_NEW(Ast_Return);
+		next();
+		if (!expect_eat(';')) {
+			ret->return_value = parse_expression();
+			if (!expect_eat(';')) {
+				compiler->report_error(peek(), "expected ';' after return value");
+			}
+		}
+
+		return ret;
+	}
+	
+	compiler->report_error(peek(), "Unexpected token: expected statement or variable declaration");
 	return 0;
 }
 
 Ast_Expression *Parser::parse_expression() {
+	Token *t = peek();
+
+	if (expect_eat(Token::ATOM)) {
+		Ast_Identifier *id = AST_NEW(Ast_Identifier);
+		id->atom = compiler->make_atom(t->lexeme);
+		id->scope = current_scope;
+
+		if (expect_eat('(')) {
+			Ast_Call *call = AST_NEW(Ast_Call);
+			call->identifier = id;
+
+			while(!expect_eat(')')) {
+				call->arguments.add(parse_expression());
+
+				if (!expect(')')) {
+					if (!expect_eat(',')) {
+						compiler->report_error(peek(), "Expected ',' after argument");
+					}
+				}
+			}
+
+			return call;
+		}
+
+		return id;
+	}
+
+	if (expect_eat(Token::INT_LIT)) {
+		Ast_Literal *lit = AST_NEW(Ast_Literal);
+		lit->literal_type = Ast_Literal::INT;
+		lit->int_value = t->int_value;
+		return lit;
+	}
+
+	if (expect_eat(Token::FLOAT_LIT)) {
+		Ast_Literal *lit = AST_NEW(Ast_Literal);
+		lit->literal_type = Ast_Literal::FLOAT;
+		lit->float_value = t->float_value;
+		return lit;
+	}
+	
+	if (expect_eat(Token::TRUE)) {
+		Ast_Literal *lit = AST_NEW(Ast_Literal);
+		lit->literal_type = Ast_Literal::BOOL;
+		lit->int_value = 1;
+		return lit;
+	}
+	
+	if (expect_eat(Token::FALSE)) {
+		Ast_Literal *lit = AST_NEW(Ast_Literal);
+		lit->literal_type = Ast_Literal::BOOL;
+		lit->int_value = 0;
+		return lit;
+	}
+
 	return 0;
 }
 
@@ -175,6 +332,7 @@ Ast_Identifier *Parser::parse_identifier() {
 	Token *t = next();
 
 	id->atom = compiler->make_atom(t->lexeme);
+	id->scope = current_scope;
 
 	return id;
 }
@@ -200,6 +358,7 @@ Ast_Type_Info *Parser::parse_type_specifier() {
 	}
 
 	if (type_info) {
+		next();
 		return type_info;
 	}
 
@@ -219,7 +378,10 @@ Ast_Type_Info *Parser::parse_type_specifier() {
 	}
 
 	if (t->type == Token::ATOM) {
-		/* TODO: Lookup type */
+		type_info = new Ast_Type_Info();
+		type_info->type = Ast_Type_Info::UNINITIALIZED;
+		type_info->unresolved_name = parse_identifier();
+		return type_info;
 	}
 
 	return 0;
@@ -228,6 +390,17 @@ Ast_Type_Info *Parser::parse_type_specifier() {
 Ast *Parser::ast_init(Ast *ast) {
 	ast->location = peek()->location;
 	return ast;
+}
+
+void Parser::push_scope() {
+	Ast_Scope *new_scope = AST_NEW(Ast_Scope);
+	new_scope->parent = current_scope;
+	current_scope = new_scope;
+}
+
+void Parser::pop_scope() {
+	assert(current_scope->parent);
+	current_scope = current_scope->parent;
 }
 
 bool Parser::expect_eat(Token::Type type) {
@@ -242,8 +415,8 @@ bool Parser::expect_eat(char type) {
 	return expect_eat((Token::Type) type);
 }
 
-bool Parser::expect(Token::Type type) {
-	Token *tok = peek();
+bool Parser::expect(Token::Type type, int off) {
+	Token *tok = peek(off);
 	if (tok->type == type) {
 		return true;
 	}
@@ -256,12 +429,17 @@ bool Parser::expect(Token::Type type) {
 	return false;
 }
 
-bool Parser::expect(char type) {
-	return expect((Token::Type) type);
+bool Parser::expect(char type, int off) {
+	return expect((Token::Type) type, off);
 }
 
-Token *Parser::peek() {
-	return &lexer->tokens[pos];
+Token *Parser::peek(int off) {
+	if (pos + off >= lexer->tokens.length) {
+		Token *t = &lexer->tokens[lexer->tokens.length - 1];
+		compiler->report_error(t, "Encountered unexpected 'end of file' during parsing");
+		return t;
+	}
+	return &lexer->tokens[pos + off];
 }
 
 Token *Parser::next() {

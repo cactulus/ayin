@@ -13,18 +13,21 @@ struct Parser {
 	Lexer *lexer;
 	s64 pos;
 
+	Ast_Scope *current_scope = 0;
+
 	Parser(Compiler *compiler, Lexer *lexer);
 
-	Ast_Scope *parse();
+	void parse();
 
-	Ast_Declaration *parse_global();
+	Ast_Statement *parse_global();
 
-	Ast_Declaration *parse_struct_declaration();
-	Ast_Declaration *parse_enum_declaration();
-	Ast_Declaration *parse_type_alias();
-	Ast_Declaration *parse_function_declaration();
-	Ast_Declaration *parse_variable_declaration();
+	Ast_Struct *parse_struct_declaration();
+	Ast_Enum *parse_enum_declaration();
+	Ast_Type_Alias *parse_type_alias();
+	Ast_Function *parse_function_declaration();
+	Ast_Declaration *parse_variable_declaration(bool expect_semicolon=false);
 
+	Ast_Statement *parse_declaration_or_statement();
 	Ast_Expression *parse_expression();
 
 	Ast_Identifier *parse_identifier();
@@ -33,11 +36,14 @@ struct Parser {
 
 	Ast *ast_init(Ast *ast);
 
+	void push_scope();
+	void pop_scope();
+
 	bool expect_eat(Token::Type type);
 	bool expect_eat(char type);
-	bool expect(Token::Type type);
-	bool expect(char type);
-	Token *peek();
+	bool expect(Token::Type type, int off=0);
+	bool expect(char type, int off=0);
+	Token *peek(int off=0);
 	Token *next();
 };
 

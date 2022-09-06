@@ -1,0 +1,16 @@
+struct Box {
+	a: s32,
+	b: s32
+}
+
+func add<T>(a: T, b: s32) s32 {
+	return a;
+}
+
+func main() s32 {
+	b: Box;
+
+	c := add(2, 4);
+
+	return 0;
+}

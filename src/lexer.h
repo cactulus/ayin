@@ -87,7 +87,7 @@ struct Token {
 
 	union {
 		s64 int_value;
-		double float_value;
+		f64 float_value;
 	};
 };
 

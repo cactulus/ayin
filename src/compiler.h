@@ -6,8 +6,15 @@
 #include "ast.h"
 #include "common.h"
 #include "lexer.h"
+#include "llvm.h"
+#include "typer.h"
 
 struct Compiler {
+	LLVM_Converter *llvm_converter;
+	Typer *typer;
+
+	Ast_Scope *global_scope;
+
 	Atom_Table source_table;
 	Atom_Table atom_table;
 	s32 errors_reported = 0;
@@ -25,9 +32,13 @@ struct Compiler {
 	Ast_Type_Info *type_f32;
 	Ast_Type_Info *type_f64;
 
+	Atom *atom_main;
+
 	Compiler();
 
-	Ast_Scope *parse_file(String file_path);
+	void run(String entry_file);
+
+	void parse_file(String file_path);
 
 	Ast_Type_Info *make_int_type(bool is_signed, s32 bytes);
 	Ast_Type_Info *make_float_type(s32 bytes);

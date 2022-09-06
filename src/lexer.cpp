@@ -308,7 +308,7 @@ String read_xchars(Lexer *l, bool (*check) (char c)) {
 
 void read_atom_or_keyword(Lexer *l, Token *t) {
 	String lexeme = read_xchars(l, is_ident_char);
-	char *cstr_lexeme = lexeme.data;
+	char *cstr_lexeme = to_c_string(lexeme);
 	t->lexeme = lexeme;
 	int i = 0;
 	for (auto keyword : keyword_tokens) {
@@ -316,6 +316,7 @@ void read_atom_or_keyword(Lexer *l, Token *t) {
 			t->type = keyword_token_types[i];
 			return;
 		}
+		++i;
 	}
 	
 	t->type = Token::ATOM;
@@ -373,9 +374,7 @@ void read_char_lit(Lexer *l, Token *t) {
 	}
 
 	t->type = Token::CHAR_LIT;
-	/*
-	t->char_value = c;
-	t->escape_char = escape;*/
+	t->int_value = c;
 }
 
 void read_hex_number(Lexer *l, Token *t) {
