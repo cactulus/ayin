@@ -54,14 +54,13 @@ struct Ast_Scope : Ast {
 	}
 
 	Ast_Scope *parent = 0;
-	Ast_Scope *extension = 0;
 
 	Array<Ast_Statement *> declarations;
 	Array<Ast_Statement *> statements;
 };
 
 struct Ast_Statement : Ast {
-	Ast_Type_Info *type_info;
+	Ast_Type_Info *type_info = 0;
 };
 
 struct Ast_Expression : Ast {
@@ -97,10 +96,10 @@ struct Ast_Type_Info {
 	Ast_Identifier *unresolved_name;
 
 	Ast_Struct *struct_decl;
-	Array<Ast_Declaration *> struct_members;
+	Array<Ast_Type_Info *> struct_members;
 	Array<Enum_Member> enum_members;
 
-	Array<Ast_Declaration *> parameter_types;
+	Array<Ast_Type_Info *> parameters;
 	Ast_Type_Info *return_type;
 
 	bool is_signed;
@@ -124,11 +123,15 @@ struct Ast_Function : Ast_Statement {
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
 
-	Ast_Scope *scope = 0;
+	Array<Ast_Declaration *> parameters;
+	Ast_Type_Info *return_type = 0;
+
+	Ast_Scope *parameter_scope = 0;
+	Ast_Scope *block_scope = 0;
 	String linkage_name;
 
 	bool is_template_function = false;
-	Ast_Scope *template_scope;
+	Ast_Scope *template_scope = 0;
 	Array<Ast_Function *> polymorphed_overloads;
 
 	Ast_Function() {
@@ -139,6 +142,7 @@ struct Ast_Function : Ast_Statement {
 struct Ast_Struct : Ast_Statement {
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
+	Array<Ast_Declaration *> members;
 
 	Ast_Struct() {
 		type = Ast::STRUCT;

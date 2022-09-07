@@ -3,7 +3,7 @@ struct Box {
 	b: s32
 }
 
-func add<T>(a: T, b: s32) s32 {
+func add(a: s32, b: s32) s32 {
 	return a;
 }
 

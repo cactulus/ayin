@@ -5,12 +5,14 @@
 
 #include "ast.h"
 #include "common.h"
+#include "copier.h"
 #include "lexer.h"
 #include "llvm.h"
 #include "typer.h"
 
 struct Compiler {
 	LLVM_Converter *llvm_converter;
+	Copier *copier;
 	Typer *typer;
 
 	Ast_Scope *global_scope;

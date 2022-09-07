@@ -8,11 +8,7 @@ Typer::Typer(Compiler *compiler) {
 }
 
 void Typer::type_check_scope(Ast_Scope *scope) {
-	Ast_Scope *old_scope = current_scope;
-	current_scope = scope;
-
 	for (auto decl : scope->declarations) {
-
 		switch (decl->type) {
 			case Ast::DECLARATION: {
 				auto var_decl = static_cast<Ast_Declaration *>(decl);
@@ -27,8 +23,7 @@ void Typer::type_check_scope(Ast_Scope *scope) {
 			} break;
 			case Ast::STRUCT: {
 				auto strct = static_cast<Ast_Struct *>(decl);
-				Ast_Type_Info *struct_type = strct->type_info;
-				for (auto decl : struct_type->struct_members) {
+				for (auto decl : strct->members) {
 					type_check_variable_declaration(decl);
 				}
 			} break;
@@ -58,8 +53,6 @@ void Typer::type_check_scope(Ast_Scope *scope) {
 			}
 		}
 	}
-
-	current_scope = old_scope;
 }
 
 void Typer::type_check_variable_declaration(Ast_Declaration *decl) {
@@ -90,20 +83,14 @@ void Typer::type_check_variable_declaration(Ast_Declaration *decl) {
 }
 
 void Typer::type_check_function(Ast_Function *function) {
-	Ast_Scope *old_scope = current_scope;
-	current_scope = function->scope;
-
 	current_function = function;
 	function->linkage_name = mangle_name(function);
 
-	Ast_Type_Info *function_type = function->type_info;
-	for (auto par : function_type->parameter_types) {
+	for (auto par : function->parameters) {
 		type_check_variable_declaration(par);
 	}
 
-	type_check_scope(function->scope);
-
-	current_scope = old_scope;
+	type_check_scope(function->block_scope);
 }
 
 void Typer::infer_type(Ast_Expression *expression) {
@@ -126,7 +113,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 		} break;
 		case Ast_Expression::IDENTIFIER: {
 			Ast_Identifier *id = static_cast<Ast_Identifier *>(expression);
-			Ast_Statement *decl = find_declaration_by_name(id->atom);
+			Ast_Statement *decl = find_declaration_by_id(id);
 
 			if (!decl) {
 				compiler->report_error(id, "Variable is not defined");
@@ -142,7 +129,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 		} break;
 		case Ast::CALL: {
 			Ast_Call *call = static_cast<Ast_Call *>(expression);
-			Ast_Statement *decl = find_declaration_by_name(call->identifier->atom);
+			Ast_Statement *decl = find_declaration_by_id(call->identifier);
 
 			if (!decl) {
 				compiler->report_error(call->identifier, "Symbol not defined");
@@ -165,7 +152,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 				call->inferred_type = function_type->return_type;
 				call->resolved_function = function;
 
-				for (int i = 0; i < function_type->parameter_types.length; ++i) {
+				for (int i = 0; i < function_type->parameters.length; ++i) {
 					if (i >= call->arguments.length) {
 						compiler->report_error(call->identifier, "Arguments count does not match parameter count");
 						return;
@@ -173,7 +160,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 
 					infer_type(call->arguments[i]);
 
-					Ast_Type_Info *par_type = function_type->parameter_types[i]->type_info;
+					Ast_Type_Info *par_type = function->parameters[i]->type_info;
 
 					call->arguments[i] = check_expression_type_and_cast(call->arguments[i], par_type);
 					Ast_Type_Info *arg_type = call->arguments[i]->inferred_type;
@@ -195,7 +182,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 	if (type_info->type != Ast_Type_Info::UNINITIALIZED) return type_info;
 
-	Ast_Statement *decl = find_declaration_by_name(type_info->unresolved_name->atom);
+	Ast_Statement *decl = find_declaration_by_id(type_info->unresolved_name);
 	if (!decl) {
 		return 0;
 	}
@@ -273,136 +260,11 @@ Ast_Cast *Typer::make_cast(Ast_Expression *expression, Ast_Type_Info *target_typ
 }
 
 Ast_Function *Typer::get_polymorph_function(Ast_Call *call, Ast_Function *template_function) {
-	Ast_Type_Info *tfn_type = template_function->type_info;
-
-	if (call->arguments.length != tfn_type->parameter_types.length) {
-		compiler->report_error(call->identifier, "Arguments count does not match parameter count");
-    	return template_function;
-    }
-    
-    for (auto arg : call->arguments) {
-		infer_type(arg);
-    }
-    
-    for (auto overload : template_function->polymorphed_overloads) {
-        bool does_match = true;
-        Ast_Type_Info *overload_type = overload->type_info;
-        for (s64 i = 0; i < overload_type->parameter_types.length; ++i) {
-            auto par_type = overload_type->parameter_types[i]->type_info;
-            auto arg_type = call->arguments[i]->inferred_type;
-            
-            if (!types_match(par_type, arg_type)) {
-                does_match = false;
-                break;
-            }
-        }
-        
-        if (does_match) return overload;
-    }
-    
-    auto polymorph = polymorph_function_with_arguments(template_function, &call->arguments);
-    if (polymorph) {
-        type_check_function(polymorph);
-        template_function->polymorphed_overloads.add(polymorph);
-    }
-    
-    return polymorph;
+	return 0;
 }
 
-Ast_Function *Typer::polymorph_function_with_arguments(Ast_Function *poly, Array<Ast_Expression *> *arguments) {
-    Ast_Function *poly_copy = new Ast_Function();
-	poly_copy->identifier = poly->identifier;
-    poly_copy->is_template_function = false; 
-
-    poly_copy->template_scope = new Ast_Scope();
-    for (auto decl : poly->template_scope->declarations) {
-    	Ast_Type_Alias *type_alias = static_cast<Ast_Type_Alias *>(decl);
-
-		Ast_Type_Alias *nta = new Ast_Type_Alias();
-		nta->location = type_alias->location;
-		nta->identifier = type_alias->identifier;
-		nta->type_info = copy_type(type_alias->type_info);
-
-    	poly_copy->template_scope->declarations.add(nta);
-	}
-	poly_copy->scope->extension = poly_copy->template_scope;
-
-    Ast_Type_Info *oft = poly->type_info;
-    Ast_Type_Info *nft = copy_type(oft);
-
-    poly_copy->type_info = nft;
-    
-    for (s64 i = 0; i < arguments->length; ++i) {
-        auto target_type_info = (*arguments)[i]->inferred_type;
-        
-        auto par_type = poly_copy->type_info->parameter_types[i]->type_info;
-        bool success = try_to_fill_polymorphic_type_aliases(par_type, target_type_info);
-        
-        if (!success) break;
-    }
-
-    for (auto _alias : poly_copy->template_scope->declarations) {
-        auto alias = static_cast<Ast_Type_Alias *>(_alias);
-        if (!alias->type_info->element_type) {
-            String name = alias->identifier->atom->id;
-            compiler->report_error(alias, "Could not fill typealias '%.*s'.\n", name.length, name.data);
-            return 0;
-        }
-    }
-    
-    return poly_copy;
-}
-
-bool Typer::try_to_fill_polymorphic_type_aliases(Ast_Type_Info *type_info, Ast_Type_Info *target_type_info) {
-	if (type_info->type == Ast_Type_Info::POINTER) {
-        if (target_type_info->type != Ast_Type_Info::POINTER) return false;
-        
-        return try_to_fill_polymorphic_type_aliases(type_info->element_type, target_type_info->element_type);
-    }
-    
-    if (type_is_primitive(type_info)) {
-        return types_match(type_info, target_type_info);
-    }
-
-	if (type_info->type == Ast_Type_Info::UNINITIALIZED) {
-		auto decl = find_declaration_by_name(type_info->unresolved_name->atom, type_info->unresolved_name->scope);
-        if (!decl) {
-            compiler->report_error(
-            		type_info->unresolved_name,
-            		"Undeclared identifier '%s'\n",
-            		to_c_string(type_info->unresolved_name->atom->id)
-            		);
-            return false;
-        }
-        
-        if (compiler->errors_reported) return false;
-        
-        if (decl->type == Ast::TYPE_ALIAS) {
-            auto alias = static_cast<Ast_Type_Alias *>(decl);
-            printf("start %p\n", alias);
-
-            if (!alias->type_info->element_type) {
-                alias->type_info->element_type = target_type_info;
-                return true;
-            } else {
-                return types_match(alias->type_info->element_type, target_type_info);
-            }
-        } else if (decl->type == Ast::STRUCT) {
-        	return types_match(decl->type_info, target_type_info);
-        } else {
-            assert(false);
-        }
-	}
-    
-	if (type_info->type == Ast_Type_Info::STRUCT) {
-        return types_match(type_info, target_type_info);
-	}
-
-    return false;
-}
-
-Ast_Statement *Typer::find_declaration_by_name(Atom *name) {
-	return find_declaration_by_name(name, current_scope);
+Ast_Statement *Typer::find_declaration_by_id(Ast_Identifier *id) {
+	return find_declaration_by_name(id->atom, id->scope);
 }
 
 Ast_Statement *Typer::find_declaration_by_name(Atom *name, Ast_Scope *scope) {
@@ -436,13 +298,6 @@ Ast_Statement *Typer::find_declaration_by_name(Atom *name, Ast_Scope *scope) {
 					if (e->identifier->atom->hash == name->hash)
 						return decl;
 				} break;
-			}
-		}
-
-		if (temp->extension) {
-			Ast_Statement *res = find_declaration_by_name(name, temp->extension);
-			if (res) {
-				return res;
 			}
 		}
 
@@ -507,7 +362,7 @@ String Typer::mangle_name(Ast_Function *decl) {
     sb.putchar('_');
 
 	Ast_Type_Info *func_type = decl->type_info;
-	for (auto par_type : func_type->parameter_types) {
+	for (auto par_type : decl->parameters) {
 		mangle_type(&sb, par_type->type_info);
 	}
 
@@ -540,50 +395,9 @@ void Typer::mangle_type(String_Builder *builder, Ast_Type_Info *type) {
 			builder->putchar('S');
 
 			for (auto mem : type->struct_members) {
-				mangle_type(builder, mem->type_info);
+				mangle_type(builder, mem);
 			}
 		} break;
 		default: assert(0);
 	}
-}
-
-Ast_Declaration *Typer::copy_declaration(Ast_Declaration *decl) {
-	Ast_Declaration *_new = new Ast_Declaration();
-	_new->location = decl->location;
-	_new->llvm_reference = decl->llvm_reference;
-	_new->identifier = decl->identifier;
-	_new->initializer = decl->initializer;
-	_new->type_info = copy_type(decl->type_info);
-
-	return _new;
-}
-
-Ast_Type_Info *Typer::copy_type(Ast_Type_Info *type_info) {
-	if (!type_info)
-		return 0;
-
-	Ast_Type_Info *_new = new Ast_Type_Info();
-
-	_new->type = type_info->type;
-	_new->element_type = copy_type(type_info->element_type);
-	_new->unresolved_name = type_info->unresolved_name;
-	_new->struct_decl = type_info->struct_decl;
-	_new->return_type = copy_type(type_info->return_type);
-	_new->is_signed = type_info->is_signed;
-	_new->size = type_info->size;
-	_new->alignment = type_info->alignment;
-
-	for (auto decl : type_info->struct_members) {
-		_new->struct_members.add(copy_declaration(decl));
-	}
-
-	for (auto mem : type_info->enum_members) {
-		_new->enum_members.add(mem);
-	}
-
-	for (auto par : type_info->parameter_types) {
-		_new->parameter_types.add(copy_declaration(par));
-	}
-
-	return _new;
 }

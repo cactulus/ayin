@@ -12,7 +12,12 @@
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
 
+/* TODO: remove later. uniform llvm version */
+#ifdef _WIN64
+#include "llvm/Support/TargetRegistry.h"
+#else
 #include "llvm/MC/TargetRegistry.h"
+#endif
 
 #include "llvm/Target/TargetMachine.h"
 
@@ -245,7 +250,7 @@ Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
 		Array<Type *> member_types;
         
         for (auto member : type_info->struct_members) {
-            member_types.add(convert_type(member->type_info));
+            member_types.add(convert_type(member));
         }
         
         return StructType::get(*llvm_context, ArrayRef<Type *>(member_types.data, member_types.length), false);
@@ -254,8 +259,8 @@ Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
 	if (type_info->type == Ast_Type_Info::FUNCTION) {
 		Array<Type *> arg_types;
         
-        for (auto par : type_info->parameter_types) {
-            Type *par_type = convert_type(par->type_info);
+        for (auto par : type_info->parameters) {
+            Type *par_type = convert_type(par);
             
             arg_types.add(par_type);
         }
@@ -277,16 +282,20 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 	auto fn = get_or_create_function(fun);
 
 	s64 i = 0;
-	for (auto &a : fn->args()) {
-		Ast_Declaration *par = fun->type_info->parameter_types[i];
-		par->llvm_reference = fn->getArg(i);
+	for (auto arg_it = fn->arg_begin(); arg_it != fn->arg_end(); arg_it++) {
+		Ast_Declaration *par = fun->parameters[i];
+		
+		Type *par_type = convert_type(par->type_info);
+		Value *var = irb->CreateAlloca(par_type);
+		par->llvm_reference = var;
+		irb->CreateStore(&*arg_it, var);
 		++i;
 	}
 	
 	BasicBlock *entry_block = BasicBlock::Create(*llvm_context, "", fn);
 	irb->SetInsertPoint(entry_block);
 
-	convert_scope(fun->scope);
+	convert_scope(fun->block_scope);
 }
 
 void LLVM_Converter::emit_llvm_ir() {
@@ -313,7 +322,9 @@ void LLVM_Converter::emit_object_file() {
     }
     
     legacy::PassManager pass;
-    auto file_type = llvm::CGFT_ObjectFile;
+
+
+	auto file_type = llvm::CGFT_ObjectFile;
     
     pass.add(createVerifierPass(false));
     if (target_machine->addPassesToEmitFile(pass, dest, nullptr, file_type)) {
@@ -329,7 +340,8 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
 	auto fn_name = STR_REF(function->linkage_name);
 
 	auto fn = llvm_module->getFunction(fn_name);
-	function->llvm_reference = fn;
+
+	printf("%p\n", fn);
 
 	if (!fn) {
 		auto fn_type = convert_type(function->type_info);
@@ -340,6 +352,8 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
 				llvm_module
 		);
 	}
+
+	function->llvm_reference = fn;
 
 	return fn;
 }

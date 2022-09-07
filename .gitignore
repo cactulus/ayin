@@ -6,7 +6,7 @@ bin/**
 *.sln
 *.user
 *.vcxproj
-temp_gen.c
+llvm/**
 *.pbxproj
 *.xcworkspacedata
 Nia.xcodeproj/**

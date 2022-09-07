@@ -7,6 +7,7 @@
 
 Compiler::Compiler() {
     llvm_converter = new LLVM_Converter(this);
+	copier = new Copier(this);
     typer = new Typer(this);
 
     global_scope = new Ast_Scope();

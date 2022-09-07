@@ -62,7 +62,10 @@ Ast_Struct *Parser::parse_struct_declaration() {
 	}
 
 	while (!expect_eat('}')) {
-		struct_type->struct_members.add(parse_variable_declaration());
+		Ast_Declaration *decl = parse_variable_declaration();
+
+		s->members.add(decl);
+		struct_type->struct_members.add(decl->type_info);
 
 		expect_eat(',');
 	}
@@ -127,12 +130,11 @@ Ast_Function *Parser::parse_function_declaration() {
 	Ast_Type_Info *type_info = new Ast_Type_Info();
 	type_info->type = Ast_Type_Info::FUNCTION;
 
-	push_scope();
-	fn->scope = current_scope;
-
 	if (expect_eat('<')) {
+
+		push_scope();
+		fn->template_scope = current_scope;
 		fn->is_template_function = true;
-		fn->template_scope = AST_NEW(Ast_Scope);
 
 		while (!expect_eat('>')) {
 			Ast_Type_Alias *alias = AST_NEW(Ast_Type_Alias);
@@ -145,7 +147,6 @@ Ast_Function *Parser::parse_function_declaration() {
 			}
 
 			fn->template_scope->declarations.add(alias);
-			current_scope->extension = fn->template_scope;
 		}
 	}
 
@@ -153,6 +154,8 @@ Ast_Function *Parser::parse_function_declaration() {
 		compiler->report_error(peek(), "Expected '(' after function name");
 	}
 
+	push_scope();
+	fn->parameter_scope = current_scope;
 	while (!expect_eat(')')) {
 		Ast_Declaration *par_decl = parse_variable_declaration();
 
@@ -160,7 +163,8 @@ Ast_Function *Parser::parse_function_declaration() {
 			compiler->report_error(par_decl, "Can't initialize parameter");
 		}
 
-		type_info->parameter_types.add(par_decl);
+		fn->parameters.add(par_decl);
+		type_info->parameters.add(par_decl->type_info);
 		current_scope->declarations.add(par_decl);
 
 		if (!expect(')')) {
@@ -182,6 +186,9 @@ Ast_Function *Parser::parse_function_declaration() {
 
 	fn->type_info = type_info;
 
+	push_scope();
+	fn->block_scope = current_scope;
+
 	while (!expect_eat('}')) {
 		Ast_Statement *statement_or_declaration = parse_declaration_or_statement();
 		if (!statement_or_declaration) {
@@ -202,6 +209,12 @@ Ast_Function *Parser::parse_function_declaration() {
 
 		}
 	}
+
+	if (fn->template_scope)
+		pop_scope();
+
+	if (fn->parameter_scope)
+		pop_scope();
 
 	pop_scope();
 
