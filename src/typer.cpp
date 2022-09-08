@@ -86,6 +86,12 @@ void Typer::type_check_function(Ast_Function *function) {
 	for (auto par : function->parameter_scope->declarations) {
 		type_check_variable_declaration(static_cast<Ast_Declaration *>(par));
 	}
+    
+    function->return_type = resolve_type_info(function->return_type);
+    if (!function->return_type) {
+        compiler->report_error(function, "Can't resolve return type of function");
+        return;
+    }
 
 	function->linkage_name = mangle_name(function);
 

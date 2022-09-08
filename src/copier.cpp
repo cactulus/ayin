@@ -128,7 +128,6 @@ Ast_Function *Copier::copy_function(Ast_Function *old) {
 	Ast_Function *_new = COPY_NEW(Ast_Function);
 
 	COPY_C(identifier);
-	COPY_TYPE(return_type);
 
 	COPY_F(is_template_function);
 	if (old->template_scope)
@@ -136,7 +135,8 @@ Ast_Function *Copier::copy_function(Ast_Function *old) {
 
 	if (old->parameter_scope)
 		_new->parameter_scope = push_scope(old->parameter_scope);
-
+    
+    COPY_TYPE(return_type);
 	_new->block_scope = push_scope(old->block_scope);
 
 	COPY_F(linkage_name);
