@@ -19,7 +19,7 @@ struct Parser {
 
 	void parse();
 
-	Ast_Statement *parse_global();
+	Ast_Expression *parse_global();
 
 	Ast_Struct *parse_struct_declaration();
 	Ast_Enum *parse_enum_declaration();
@@ -27,7 +27,7 @@ struct Parser {
 	Ast_Function *parse_function_declaration();
 	Ast_Declaration *parse_variable_declaration(bool expect_semicolon=false);
 
-	Ast_Statement *parse_declaration_or_statement();
+	Ast_Expression *parse_declaration_or_statement();
 	Ast_Expression *parse_expression();
 
 	Ast_Identifier *parse_identifier();

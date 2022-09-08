@@ -16,7 +16,7 @@ void Parser::parse() {
 	}
 }
 
-Ast_Statement *Parser::parse_global() {
+Ast_Expression *Parser::parse_global() {
 	Token *t = peek();
 	
 	if (expect_eat(Token::STRUCT)) {
@@ -127,9 +127,6 @@ Ast_Function *Parser::parse_function_declaration() {
 		compiler->report_error(fn->identifier, "Expected identifier for function name");
 	}
 
-	Ast_Type_Info *type_info = new Ast_Type_Info();
-	type_info->type = Ast_Type_Info::FUNCTION;
-
 	if (expect_eat('<')) {
 
 		push_scope();
@@ -163,8 +160,6 @@ Ast_Function *Parser::parse_function_declaration() {
 			compiler->report_error(par_decl, "Can't initialize parameter");
 		}
 
-		fn->parameters.add(par_decl);
-		type_info->parameters.add(par_decl->type_info);
 		current_scope->declarations.add(par_decl);
 
 		if (!expect(')')) {
@@ -175,22 +170,20 @@ Ast_Function *Parser::parse_function_declaration() {
 	}
 
 	if (expect_eat('{')) {
-		type_info->return_type = compiler->type_void;
+		fn->return_type = compiler->type_void;
 	} else {
-		type_info->return_type = parse_type_specifier();
+		fn->return_type = parse_type_specifier();
 
 		if (!expect_eat('{')) {
 			compiler->report_error(peek(), "Expected '{' after return type specifier");
 		}
 	}
 
-	fn->type_info = type_info;
-
 	push_scope();
 	fn->block_scope = current_scope;
 
 	while (!expect_eat('}')) {
-		Ast_Statement *statement_or_declaration = parse_declaration_or_statement();
+		Ast_Expression *statement_or_declaration = parse_declaration_or_statement();
 		if (!statement_or_declaration) {
 			return fn;
 		}
@@ -255,7 +248,7 @@ Ast_Declaration *Parser::parse_variable_declaration(bool expect_semicolon) {
 	return var_decl;
 }
 
-Ast_Statement *Parser::parse_declaration_or_statement() {
+Ast_Expression *Parser::parse_declaration_or_statement() {
 	if (expect(Token::ATOM) && expect(':', 1)) {
 		return parse_variable_declaration(true);
 	}

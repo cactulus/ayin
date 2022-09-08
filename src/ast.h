@@ -12,7 +12,6 @@ struct Ast;
 
 struct Ast_Scope;
 
-struct Ast_Statement;
 struct Ast_Expression;
 
 struct Ast_Type_Info;
@@ -55,16 +54,12 @@ struct Ast_Scope : Ast {
 
 	Ast_Scope *parent = 0;
 
-	Array<Ast_Statement *> declarations;
-	Array<Ast_Statement *> statements;
-};
-
-struct Ast_Statement : Ast {
-	Ast_Type_Info *type_info = 0;
+	Array<Ast_Expression *> declarations;
+	Array<Ast_Expression *> statements;
 };
 
 struct Ast_Expression : Ast {
-	Ast_Type_Info *inferred_type = 0;
+	Ast_Type_Info *type_info = 0;
 };
 
 struct Ast_Type_Info {
@@ -109,7 +104,7 @@ struct Ast_Type_Info {
 	s32 alignment;
 };
 
-struct Ast_Declaration : Ast_Statement {
+struct Ast_Declaration : Ast_Expression {
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
 	Ast_Expression *initializer = 0;
@@ -119,11 +114,10 @@ struct Ast_Declaration : Ast_Statement {
 	}
 };
 
-struct Ast_Function : Ast_Statement {
+struct Ast_Function : Ast_Expression {
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
 
-	Array<Ast_Declaration *> parameters;
 	Ast_Type_Info *return_type = 0;
 
 	Ast_Scope *parameter_scope = 0;
@@ -139,7 +133,7 @@ struct Ast_Function : Ast_Statement {
 	}
 };
 
-struct Ast_Struct : Ast_Statement {
+struct Ast_Struct : Ast_Expression {
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
 	Array<Ast_Declaration *> members;
@@ -149,7 +143,7 @@ struct Ast_Struct : Ast_Statement {
 	}
 };
 
-struct Ast_Enum : Ast_Statement {
+struct Ast_Enum : Ast_Expression {
 	Ast_Identifier *identifier = 0;
 
 	Ast_Enum() {
@@ -157,7 +151,7 @@ struct Ast_Enum : Ast_Statement {
 	}
 };
 
-struct Ast_Type_Alias : Ast_Statement {
+struct Ast_Type_Alias : Ast_Expression {
 	Ast_Identifier *identifier = 0;
 
 	Ast_Type_Alias() {
@@ -167,7 +161,6 @@ struct Ast_Type_Alias : Ast_Statement {
 
 struct Ast_Identifier : Ast_Expression {
 	Atom *atom;
-	Ast_Statement *resolved_declaration = 0;
 	Ast_Scope *scope = 0;
 
 	Ast_Identifier() {
@@ -200,7 +193,7 @@ struct Ast_Cast : Ast_Expression {
 	}
 };
 
-struct Ast_Return : Ast_Statement {
+struct Ast_Return : Ast_Expression {
 	Ast_Expression *return_value = 0;
 
 	Ast_Return() {

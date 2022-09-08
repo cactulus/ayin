@@ -42,7 +42,7 @@ struct LLVM_Converter {
 
 	void convert_scope(Ast_Scope *scope);
 
-	void convert_statement(Ast_Statement *statement);
+	void convert_statement(Ast_Expression *expression);
 
 	llvm::Value *convert_expression(Ast_Expression *expression);
 

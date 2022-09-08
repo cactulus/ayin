@@ -137,7 +137,8 @@ void Lexer::tokenize() {
 	while (pos < input_len) {
 		tokens.add(read_token());
 	}
-
+        
+    assert(tokens.length > 0);
 	if (tokens[tokens.length - 1].type  != Token::END_OF_FILE) {
 		Token eof;
 		eof.lexeme = to_string("eof");

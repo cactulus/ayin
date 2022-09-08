@@ -26,9 +26,8 @@ struct Typer {
 	Ast_Cast *make_cast(Ast_Expression *expression, Ast_Type_Info *target_type);
 
 	Ast_Function *get_polymorph_function(Ast_Call *call, Ast_Function *template_function);
-
-	Ast_Statement *find_declaration_by_id(Ast_Identifier *id);
-	Ast_Statement *find_declaration_by_name(Atom *name, Ast_Scope *scope);
+	Ast_Function *make_polymorph_function(Ast_Function *template_function, Array<Ast_Expression *> *arguments);
+	bool can_fill_polymorph(Ast_Type_Info *par_type, Ast_Type_Info *arg_type); 
 
 	bool types_match(Ast_Type_Info *t1, Ast_Type_Info *t2);
 

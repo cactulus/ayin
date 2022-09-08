@@ -22,12 +22,12 @@ project "aleph"
 	filter { "system:linux" }
   		buildoptions { "`llvm-config --cxxflags`" }
   		linkoptions { "`llvm-config --ldflags --libs core`" }
-		buildoptions { "-Wno-writable-strings" }
+		buildoptions { "-Wno-writable-strings -Wno-switch" }
 
 	filter { "system:macosx" }
   		buildoptions { "`llvm-config --cxxflags`" }
   		linkoptions { "`llvm-config --ldflags --libs core`" }
-		buildoptions { "-Wno-writable-strings" }
+		buildoptions { "-Wno-writable-strings -Wno-switch" }
 
 	filter "configurations:Debug"
 		defines { "ALEPH_DEBUG" }

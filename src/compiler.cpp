@@ -161,7 +161,7 @@ void Compiler::report_error(Ast *ast, const char *fmt, ...) {
 int main(int argc, char *argv[]) {
 	Compiler compiler;
 
-	compiler.run(to_string("examples/example.alf"));
+	compiler.run(to_string("/Users/niko/Desktop/dev/aleph/examples/example.alf"));
 
 	return 0;
 }

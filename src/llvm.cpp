@@ -1,3 +1,4 @@
+#include "compiler.h"
 #include <string>
 
 #include "llvm/IR/BasicBlock.h"
@@ -83,13 +84,13 @@ void LLVM_Converter::convert_scope(Ast_Scope *scope) {
 	}
 }
 
-void LLVM_Converter::convert_statement(Ast_Statement *statement) {
-	switch (statement->type) {
+void LLVM_Converter::convert_statement(Ast_Expression *expression) {
+	switch (expression->type) {
 		case Ast::STRUCT: {
 			
 		} break;
 		case Ast::FUNCTION: {
-			auto fun = static_cast<Ast_Function *>(statement);
+			auto fun = static_cast<Ast_Function *>(expression);
 			if (fun->is_template_function) {
 				for (auto f : fun->polymorphed_overloads) {
 					convert_function(f);
@@ -99,7 +100,7 @@ void LLVM_Converter::convert_statement(Ast_Statement *statement) {
 			}
 		} break;
 		case Ast::DECLARATION: {
-			auto decl = static_cast<Ast_Declaration *>(statement);
+			auto decl = static_cast<Ast_Declaration *>(expression);
 			auto var = irb->CreateAlloca(convert_type(decl->type_info));
 			if (decl->initializer) {
 				auto value = convert_expression(decl->initializer);
@@ -107,8 +108,8 @@ void LLVM_Converter::convert_statement(Ast_Statement *statement) {
 			}
 			decl->llvm_reference = var;
 		} break;
-		case Ast_Statement::RETURN: {
-			Ast_Return *ret = static_cast<Ast_Return *>(statement);
+		case Ast::RETURN: {
+			Ast_Return *ret = static_cast<Ast_Return *>(expression);
 
 			if (ret->return_value) {
 				Value *return_value = convert_expression(ret->return_value);
@@ -124,7 +125,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression) {
 	switch (expression->type) {
 		case Ast_Expression::LITERAL: {
 			Ast_Literal *literal = static_cast<Ast_Literal *>(expression);
-			Type *ty = convert_type(expression->inferred_type);
+			Type *ty = convert_type(expression->type_info);
 
 			switch (literal->literal_type) {
 				case Ast_Literal::BOOL:
@@ -142,11 +143,11 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression) {
 		};
 		case Ast_Expression::IDENTIFIER: {
 			Ast_Identifier *id = static_cast<Ast_Identifier *>(expression);
-			assert(id->resolved_declaration);
 
-			auto declaration = id->resolved_declaration;
-			// for now 
-			assert(declaration->type == Ast::DECLARATION);
+			auto declaration = find_declaration_by_id(id);
+			// no need to check if found because we already do that in the type checking phase 
+
+			/* safe cast for now */
 			auto decl = static_cast<Ast_Declaration *>(declaration);
 
 			Value *ref = decl->llvm_reference;
@@ -157,7 +158,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression) {
 			Ast_Cast *cast = static_cast<Ast_Cast *>(expression);
             Value *value = convert_expression(cast->expression);
             
-            auto src = cast->expression->inferred_type;
+            auto src = cast->expression->type_info;
             auto dst = cast->target_type;
             
             auto src_type = convert_type(src);
@@ -270,9 +271,6 @@ Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
         return FunctionType::get(return_type, ArrayRef<Type *>(arg_types.data, arg_types.length), false);
 	}
 
-	if (type_info->type == Ast_Type_Info::TYPE) {
-		return convert_type(type_info->element_type);
-	}
 
 	assert(0 && "Should be unreachable");
 	return 0;
@@ -281,9 +279,12 @@ Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
 void LLVM_Converter::convert_function(Ast_Function *fun) {
 	auto fn = get_or_create_function(fun);
 
+	BasicBlock *entry_block = BasicBlock::Create(*llvm_context, "", fn);
+	irb->SetInsertPoint(entry_block);
+
 	s64 i = 0;
 	for (auto arg_it = fn->arg_begin(); arg_it != fn->arg_end(); arg_it++) {
-		Ast_Declaration *par = fun->parameters[i];
+		auto par = static_cast<Ast_Declaration *>(fun->parameter_scope->declarations[i]);
 		
 		Type *par_type = convert_type(par->type_info);
 		Value *var = irb->CreateAlloca(par_type);
@@ -292,9 +293,6 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 		++i;
 	}
 	
-	BasicBlock *entry_block = BasicBlock::Create(*llvm_context, "", fn);
-	irb->SetInsertPoint(entry_block);
-
 	convert_scope(fun->block_scope);
 }
 
@@ -341,10 +339,19 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
 
 	auto fn = llvm_module->getFunction(fn_name);
 
-	printf("%p\n", fn);
-
 	if (!fn) {
-		auto fn_type = convert_type(function->type_info);
+        Array<Type *> arg_types;
+        
+        for (auto par : function->parameter_scope->declarations) {
+            Type *par_type = convert_type(par->type_info);
+            
+            arg_types.add(par_type);
+        }
+        
+        Type *return_type = convert_type(function->return_type);
+        
+        auto fn_type = FunctionType::get(return_type, ArrayRef<Type *>(arg_types.data, arg_types.length), false);
+        
 		fn = Function::Create(
 				static_cast<FunctionType *>(fn_type),
 				GlobalValue::LinkageTypes::ExternalLinkage,
