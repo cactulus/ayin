@@ -99,7 +99,6 @@ struct Lexer {
 	String input;
   	String file;
 	s64 input_len;
-	bool is_in_if;
 
 	s64 line;
 	s64 col;

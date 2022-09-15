@@ -29,6 +29,8 @@ struct LLVM_Converter {
 	llvm::TargetMachine *target_machine;
 	llvm::IRBuilder<llvm::ConstantFolder, llvm::IRBuilderDefaultInserter> *irb;
 
+	llvm::Function *current_function = 0;
+
 	llvm::Type *type_void;
 	llvm::Type *type_i1;
 	llvm::Type *type_i8;
@@ -44,7 +46,8 @@ struct LLVM_Converter {
 
 	void convert_statement(Ast_Expression *expression);
 
-	llvm::Value *convert_expression(Ast_Expression *expression);
+	llvm::Value *convert_expression(Ast_Expression *expression, bool is_lvalue=false);
+	llvm::Value *convert_binary(Ast_Binary *binary);
 
 	llvm::Type *convert_type(Ast_Type_Info *type_info);
 

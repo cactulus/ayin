@@ -1,7 +1,39 @@
 #include "parser.h"
 #include "ast.h"
+#include "common.h"
 #include "lexer.h"
 #include "compiler.h"
+
+const int binary_operators[] = {
+	Token::ADD_EQ,
+	Token::SUB_EQ,
+	Token::MUL_EQ,
+	Token::DIV_EQ,
+	Token::MOD_EQ,
+	Token::SHL_EQ,
+	Token::SHR_EQ,
+	Token::XOR_EQ,
+	Token::OR_EQ,
+	Token::AND_EQ,
+	'=',
+	Token::BAR_BAR,
+	Token::AND_AND,
+	'|', '^', '&',
+	Token::EQ_EQ,
+	Token::NOT_EQ,
+	Token::LT_EQ,
+	Token::GT_EQ,
+	'<', '>',
+	Token::SHL,
+	Token::SHR,
+	'+', '-', '*', '/', '%',
+};
+
+const int binary_operators_precedence[] = {
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	2, 3, 4, 5, 6, 7, 7, 8, 8, 8, 8,
+	9, 9, 19, 19, 11, 11, 11
+};
 
 Parser::Parser(Compiler *compiler, Lexer *lexer) {
 	this->compiler = compiler;
@@ -270,7 +302,43 @@ Ast_Expression *Parser::parse_declaration_or_statement() {
 	return 0;
 }
 
-Ast_Expression *Parser::parse_expression() {
+Ast_Expression *Parser::parse_expression(int precedence) {
+	return parse_binary(precedence);
+}
+
+Ast_Expression *Parser::parse_binary(int precedence) {
+	auto lhs = parse_primary();
+
+	while (true) {
+		auto tok = peek();
+		auto tok_type = tok->type;
+
+		int op_prec = 0;
+		for (auto bin_op : binary_operators) {
+			if (bin_op == tok_type) {
+				op_prec = binary_operators_precedence[bin_op];
+				break;
+			}
+		}
+
+		if (!op_prec || op_prec < precedence) {
+			break;
+		}
+
+		next();
+
+		Ast_Binary *binary = AST_NEW(Ast_Binary);
+		binary->lhs = lhs;
+		binary->op = tok_type;
+        binary->rhs = parse_binary(op_prec + 1);
+
+        lhs = binary;
+	}
+
+	return lhs;
+}
+
+Ast_Expression *Parser::parse_primary() {
 	Token *t = peek();
 
 	if (expect_eat(Token::ATOM)) {
@@ -385,7 +453,7 @@ Ast_Type_Info *Parser::parse_type_specifier() {
 
 	if (t->type == Token::ATOM) {
 		type_info = new Ast_Type_Info();
-		type_info->type = Ast_Type_Info::UNINITIALIZED;
+		type_info->type = Ast_Type_Info::UNRESOLVED;
 		type_info->unresolved_name = parse_identifier();
 		return type_info;
 	}

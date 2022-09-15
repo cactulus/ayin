@@ -22,6 +22,7 @@ struct Ast_Struct;
 struct Ast_Enum;
 struct Ast_Type_Alias;
 
+struct Ast_Binary;
 struct Ast_Identifier;
 struct Ast_Literal;
 struct Ast_Cast;
@@ -41,6 +42,7 @@ struct Ast {
 		CAST = 8,
 		RETURN = 9,
 		CALL = 10,
+		BINARY = 11,
 	};
 
 	Source_Location location;
@@ -64,7 +66,7 @@ struct Ast_Expression : Ast {
 
 struct Ast_Type_Info {
 	enum Base_Type : u32 {
-		UNINITIALIZED = 0,
+		UNRESOLVED = 0,
 
 		STRUCT,
 		ENUM,
@@ -108,6 +110,7 @@ struct Ast_Declaration : Ast_Expression {
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
 	Ast_Expression *initializer = 0;
+	bool is_constant = false;
 
 	Ast_Declaration() {
 		type = Ast::DECLARATION;
@@ -156,6 +159,16 @@ struct Ast_Type_Alias : Ast_Expression {
 
 	Ast_Type_Alias() {
 		type = Ast::TYPE_ALIAS;
+	}
+};
+
+struct Ast_Binary : Ast_Expression {
+	Ast_Expression *lhs;
+	Ast_Expression *rhs;
+	int op;
+
+	Ast_Binary() {
+		type = Ast::BINARY;
 	}
 };
 
@@ -211,6 +224,10 @@ struct Ast_Call : Ast_Expression {
 	}
 };
 
+inline bool type_is_bool(Ast_Type_Info *type_info) {
+	return type_info->type == Ast_Type_Info::BOOL;
+}
+
 inline bool type_is_int(Ast_Type_Info *type_info) {
 	return type_info->type == Ast_Type_Info::INT;
 }
@@ -229,6 +246,58 @@ inline bool type_is_primitive(Ast_Type_Info *type_info) {
 		case Ast_Type_Info::INT:
 		case Ast_Type_Info::VOID:
 		case Ast_Type_Info::BOOL:
+			return true;
+		default:
+			return false;
+	}
+}
+
+inline bool binop_is_assign(int op) {
+	switch (op) {
+		case '=':
+		case Token::ADD_EQ:
+		case Token::SUB_EQ:
+		case Token::MUL_EQ:
+		case Token::DIV_EQ:
+		case Token::MOD_EQ:
+		case Token::SHL_EQ:
+		case Token::SHR_EQ:
+			return true;
+		default:
+			return false;
+	}
+}
+
+inline bool binop_is_logical(int op) {
+	return op == Token::AND_AND || op == Token::BAR_BAR;
+}
+
+inline bool binop_is_binary(int op) {
+    switch (op) {
+		case '+':
+		case '-':
+		case '*':
+		case '/':
+		case '%':
+		case '&':
+		case '|':
+		case '^':
+        case Token::SHL:
+        case Token::SHR:
+            return true;
+		default:
+            return false;
+    }
+}
+
+inline bool binop_is_conditional(int op) {
+	switch (op) {
+		case Token::EQ_EQ:
+		case Token::NOT_EQ:
+		case '<':
+		case '>':
+		case Token::LT_EQ:
+		case Token::GT_EQ:
 			return true;
 		default:
 			return false;

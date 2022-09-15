@@ -36,6 +36,9 @@ struct Typer {
 
 	String mangle_name(Ast_Function *decl);
 	void mangle_type(String_Builder *builder, Ast_Type_Info *type);
+
+
+	Ast_Expression *make_compare_zero(Ast_Expression *target);
 };
 
 #endif

@@ -3,6 +3,8 @@
 #include "ast.h"
 #include "common.h"
 
+static bool expr_is_targatable(Ast_Expression *expression);
+
 Typer::Typer(Compiler *compiler) {
 	this->compiler = compiler;
 }
@@ -93,6 +95,8 @@ void Typer::type_check_function(Ast_Function *function) {
         return;
     }
 
+    if (compiler->errors_reported) return;
+
 	function->linkage_name = mangle_name(function);
 
 	type_check_scope(function->block_scope);
@@ -180,11 +184,81 @@ void Typer::infer_type(Ast_Expression *expression) {
 				}
 			}
 		} break;
+		case Ast_Expression::BINARY: {
+			Ast_Binary *binary = static_cast<Ast_Binary *>(expression);
+			infer_type(binary->lhs);
+			infer_type(binary->rhs);
+
+        	auto lhs_type = binary->lhs->type_info;
+        	auto rhs_type = binary->rhs->type_info;
+        	auto eval_type = lhs_type;
+
+			if (binop_is_conditional(binary->op)) {
+				eval_type = compiler->type_bool;
+			}
+
+			if (binop_is_logical(binary->op)) {
+				eval_type = compiler->type_bool;
+
+				if (!type_is_bool(lhs_type)) {
+					binary->lhs = make_compare_zero(binary->lhs);
+				}
+
+				if (!type_is_bool(rhs_type)) {
+					binary->rhs = make_compare_zero(binary->rhs);
+				}
+			}
+
+			if (binop_is_assign(binary->op)) {
+				if (!expr_is_targatable(binary->lhs)) {
+					compiler->report_error(binary, "Can't assign value to this expression");
+				}
+
+				if (binary->lhs->type == Ast_Expression::IDENTIFIER) {
+					Ast_Identifier *id = static_cast<Ast_Identifier *>(binary->lhs);
+					Ast_Expression *var_expr = find_declaration_by_id(id);
+
+					if (var_expr->type != Ast::DECLARATION) {
+						compiler->report_error(id, "Expected name of variable - not of struct or function");
+						return;
+					}
+
+					Ast_Declaration *decl = static_cast<Ast_Declaration *>(var_expr);
+					if (decl->is_constant) {
+						compiler->report_error(binary->lhs, "Can't assign value to constant variable");
+					}
+				}
+			}
+
+			if (binop_is_binary(binary->op)) {
+				if (!(type_is_pointer(lhs_type) && type_is_int(rhs_type)) &&
+					(!type_is_int(lhs_type) && !type_is_int(rhs_type)) &&
+					(!type_is_float(lhs_type) && !type_is_float(rhs_type))) {
+					/* TODO: check whether this if even makes sense */
+					if (type_is_pointer(lhs_type) && (binary->op != '+' && binary->op != '-')) {
+						compiler->report_error(binary, "Illegal binary operator for pointer type");
+					}
+					compiler->report_error(binary, "Illegal type for binary expression");
+				}
+			}
+
+			/* TODO: check bug where eval_type is not set to bool and types get casted
+			 * is eval_type then outdated? */
+			binary->rhs = check_expression_type_and_cast(binary->rhs, binary->lhs->type_info);
+			if (!types_match(binary->rhs->type_info, binary->lhs->type_info)) {
+				binary->lhs = check_expression_type_and_cast(binary->lhs, binary->rhs->type_info);
+				if (!types_match(binary->rhs->type_info, binary->lhs->type_info)) {
+					compiler->report_error(binary, "Lhs and Rhs of binary expression are of different types");
+				}
+			}
+
+			binary->type_info = eval_type;
+		} break;
 	}
 }
 
 Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
-	if (type_info->type != Ast_Type_Info::UNINITIALIZED) return type_info;
+	if (type_info->type != Ast_Type_Info::UNRESOLVED) return type_info;
 
 	Ast_Expression *decl = find_declaration_by_id(type_info->unresolved_name);
 	if (!decl) {
@@ -312,6 +386,9 @@ Ast_Function *Typer::make_polymorph_function(Ast_Function *template_function, Ar
 		}
 	}
 
+	if (compiler->errors_reported)
+		return poly;
+
 	for (auto decl : poly->template_scope->declarations) {
 		auto alias = static_cast<Ast_Type_Alias *>(decl);
 		if (alias->type_info->type == Ast_Type_Info::TYPE) {
@@ -334,7 +411,7 @@ bool Typer::can_fill_polymorph(Ast_Type_Info *par_type, Ast_Type_Info *arg_type)
         return types_match(par_type, arg_type);
     }
     
-    if (par_type->type == Ast_Type_Info::UNINITIALIZED) {
+    if (par_type->type == Ast_Type_Info::UNRESOLVED) {
         auto decl = find_declaration_by_id(par_type->unresolved_name);
         if (!decl) {
             compiler->report_error(par_type->unresolved_name, "Undeclared identifier.\n");
@@ -451,5 +528,40 @@ void Typer::mangle_type(String_Builder *builder, Ast_Type_Info *type) {
 			}
 		} break;
 		default: assert(0);
+	}
+}
+
+Ast_Expression *Typer::make_compare_zero(Ast_Expression *target) {
+	infer_type(target);
+
+	Ast_Type_Info *target_type = target->type_info;
+
+	Ast_Literal *lit = new Ast_Literal();
+	lit->location = target->location;
+	
+	switch (target_type->type) {
+		case Ast_Type_Info::INT:
+		case Ast_Type_Info::FLOAT:
+		case Ast_Type_Info::BOOL:
+			break;
+		default:
+			compiler->report_error(target, "Expression has to be of type int, bool or float for auto compare zero");
+	}
+
+	Ast_Binary *be = new Ast_Binary();
+	be->location = target->location;
+	be->lhs = target;
+	be->rhs = lit;
+	be->op = Token::NOT_EQ;
+	be->type_info = compiler->type_bool;
+	return be;
+}
+
+bool expr_is_targatable(Ast_Expression *expression) {
+	switch (expression->type) {
+	case Ast_Expression::IDENTIFIER:
+		return true;
+	default:
+		return false;
 	}
 }

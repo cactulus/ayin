@@ -127,7 +127,6 @@ Lexer::Lexer(Compiler *compiler, String path, String code) {
 	init_preproc_definitions();
     
 	input_len = code.length;
-	is_in_if = false;
 	col = 0;
 	line = 0;
 	pos = 0;

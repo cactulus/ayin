@@ -118,6 +118,16 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 
 			return _new;
 		}
+		case Ast::BINARY: {
+			auto old = static_cast<Ast_Binary *>(ast);
+			auto _new = COPY_NEW(Ast_Binary);
+
+			COPY_F(op);
+			COPY_C(lhs);
+			COPY_C(rhs);
+
+			return _new;
+		}
 	}
 
 	assert(0);
@@ -157,7 +167,7 @@ Ast_Function *Copier::copy_function(Ast_Function *old) {
 Ast_Type_Info *Copier::copy_type(Ast_Type_Info *old) {
 	if (!old) return 0;
 
-	if (old->type == Ast_Type_Info::UNINITIALIZED) {
+	if (old->type == Ast_Type_Info::UNRESOLVED) {
 		Ast_Type_Info *_new = new Ast_Type_Info();
 
 		COPY_F(type);

@@ -397,6 +397,18 @@ struct Atom_Table {
         
         return 0;
 	}
+    
+    Atom *find_atom_hash(String id) {
+        u32 hash = hash_str(id);
+        for (s64 i = 0; i < data.length; ++i) {
+            auto it = data[i];
+            if (it->hash == hash) {
+                return it;
+            }
+        }
+        
+        return 0;
+    }
 
 	u32 hash_str(String str) {
 		u32 hash = 5381;

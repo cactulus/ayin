@@ -28,7 +28,10 @@ struct Parser {
 	Ast_Declaration *parse_variable_declaration(bool expect_semicolon=false);
 
 	Ast_Expression *parse_declaration_or_statement();
-	Ast_Expression *parse_expression();
+	Ast_Expression *parse_expression(int precedence = 1);
+
+	Ast_Expression *parse_binary(int precedence);
+	Ast_Expression *parse_primary();
 
 	Ast_Identifier *parse_identifier();
 

@@ -121,7 +121,7 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 	}
 }
 
-Value *LLVM_Converter::convert_expression(Ast_Expression *expression) {
+Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lvalue) {
 	switch (expression->type) {
 		case Ast_Expression::LITERAL: {
 			Ast_Literal *literal = static_cast<Ast_Literal *>(expression);
@@ -152,11 +152,14 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression) {
 
 			Value *ref = decl->llvm_reference;
 
+			if (is_lvalue) {
+				return ref;
+			}
 			return load(ref);
 		};
 		case Ast_Expression::CAST: {
 			Ast_Cast *cast = static_cast<Ast_Cast *>(expression);
-            Value *value = convert_expression(cast->expression);
+            Value *value = convert_expression(cast->expression, is_lvalue);
             
             auto src = cast->expression->type_info;
             auto dst = cast->target_type;
@@ -212,10 +215,157 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression) {
 
 			return irb->CreateCall(fun, ArrayRef<Value *>(arguments.data, arguments.length));
 		};
+		case Ast::BINARY: {
+			Ast_Binary *binary = static_cast<Ast_Binary *>(expression);
+
+			return convert_binary(binary);
+		};
 		default:
 			assert(0 && "LLVM emission for expression not implemented");
 			return 0;
 	}
+}
+
+Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
+	auto rhs = convert_expression(binary->rhs);
+	auto token_op = binary->op;
+	Instruction::BinaryOps op;
+	CmpInst::Predicate cmpop;
+	Value *new_value = 0;
+	auto ty = binary->lhs->type_info;
+	bool is_ptr = type_is_pointer(ty);
+	Type *llvm_type = convert_type(binary->type_info);
+
+    if ((type_is_int(ty) && !ty->is_signed) || is_ptr) {
+        switch (token_op) {
+            case '+':
+			case Token::ADD_EQ: op = Instruction::BinaryOps::Add; break;
+            case '-':
+			case Token::SUB_EQ: op = Instruction::BinaryOps::Sub; break;
+            case '*':
+			case Token::MUL_EQ: op = Instruction::BinaryOps::Mul; break;
+            case '/':
+			case Token::DIV_EQ: op = Instruction::BinaryOps::UDiv; break;
+            case '%':
+			case Token::MOD_EQ: op = Instruction::BinaryOps::URem; break;
+			case Token::EQ_EQ: cmpop = CmpInst::Predicate::ICMP_EQ; break;
+			case Token::NOT_EQ: cmpop = CmpInst::Predicate::ICMP_NE; break;
+			case Token::LT_EQ: cmpop = CmpInst::Predicate::ICMP_ULE; break;
+			case Token::GT_EQ: cmpop = CmpInst::Predicate::ICMP_UGE; break;
+            case '<': cmpop = CmpInst::Predicate::ICMP_ULT; break;
+            case '>': cmpop = CmpInst::Predicate::ICMP_UGT; break;
+	    }
+    } else if (type_is_int(ty) || type_is_bool(ty)) {
+        switch (token_op) {
+            case '+':
+			case Token::ADD_EQ:  op = Instruction::BinaryOps::Add; break;
+            case '-':
+			case Token::SUB_EQ: op = Instruction::BinaryOps::Sub; break;
+            case '*':
+			case Token::MUL_EQ: op = Instruction::BinaryOps::Mul; break;
+            case '/':
+			case Token::DIV_EQ: op = Instruction::BinaryOps::SDiv; break;
+            case '%':
+			case Token::MOD_EQ: op = Instruction::BinaryOps::SRem; break;
+			case Token::EQ_EQ: cmpop = CmpInst::Predicate::ICMP_EQ; break;
+			case Token::NOT_EQ: cmpop = CmpInst::Predicate::ICMP_NE; break;
+			case Token::LT_EQ: cmpop = CmpInst::Predicate::ICMP_SLE; break;
+			case Token::GT_EQ: cmpop = CmpInst::Predicate::ICMP_SGE; break;
+            case '<': cmpop = CmpInst::Predicate::ICMP_SLT; break;
+            case '>': cmpop = CmpInst::Predicate::ICMP_SGT; break;
+	    }
+	} else if (type_is_float(ty)) {
+		switch (token_op) {
+			case '+':
+			case Token::ADD_EQ: op = Instruction::BinaryOps::FAdd; break;
+			case '-':
+			case Token::SUB_EQ: op = Instruction::BinaryOps::FSub; break;
+			case '*':
+			case Token::MUL_EQ: op = Instruction::BinaryOps::FMul; break;
+			case '/':
+			case Token::DIV_EQ: op = Instruction::BinaryOps::FDiv; break;
+			case '%':
+			case Token::MOD_EQ: op = Instruction::BinaryOps::FRem; break;
+			case Token::EQ_EQ: cmpop = CmpInst::Predicate::FCMP_UEQ; break;
+			case Token::NOT_EQ: cmpop = CmpInst::Predicate::FCMP_UNE; break;
+			case Token::LT_EQ: cmpop = CmpInst::Predicate::FCMP_ULE; break;
+			case Token::GT_EQ: cmpop = CmpInst::Predicate::FCMP_UGE; break;
+			case '<': cmpop = CmpInst::Predicate::FCMP_ULT; break;
+			case '>': cmpop = CmpInst::Predicate::FCMP_UGT; break;
+		}
+	}
+
+	if (token_op == '=') {
+		new_value = rhs;
+	    auto target = convert_expression(binary->lhs, true);
+
+	    irb->CreateStore(new_value, target);
+	} else if (binop_is_binary(token_op) || (token_op >= Token::ADD_EQ && token_op <= Token::MOD_EQ)) {
+		auto lhs = convert_expression(binary->lhs);
+	    if (is_ptr) {
+	        new_value = irb->CreateInBoundsGEP(llvm_type, lhs, rhs);
+        } else {
+            switch (token_op) {
+                case '|':
+                    new_value = irb->CreateOr(lhs, rhs);
+                    break;
+                case '&':
+                    new_value = irb->CreateAnd(lhs, rhs);
+                    break;
+                case '^':
+                    new_value = irb->CreateXor(lhs, rhs);
+                    break;
+				case Token::SHR:
+                    new_value = irb->CreateLShr(lhs, rhs);
+                    break;
+				case Token::SHL:
+                    new_value = irb->CreateShl(lhs, rhs);
+                    break;
+                default:
+                    new_value = irb->CreateBinOp(op, lhs, rhs);
+                    break;
+            }
+        }
+        if (token_op >= Token::ADD_EQ && token_op <= Token::MOD_EQ) {
+	        auto target = convert_expression(binary->lhs, true);
+	        irb->CreateStore(new_value, target);
+        }
+	}  else if (binop_is_conditional(token_op)) {
+		auto lhs = convert_expression(binary->lhs);
+		if (type_is_float(ty)) {
+			new_value = irb->CreateFCmp(cmpop, lhs, rhs);
+		} else {
+			new_value = irb->CreateICmp(cmpop, lhs, rhs);
+		}
+    } else if (binop_is_logical(token_op)) {
+		auto lhs = convert_expression(binary->lhs);
+        BasicBlock *rhs_block = BasicBlock::Create(*llvm_context, "", current_function);
+        BasicBlock *merge_block = BasicBlock::Create(*llvm_context, "", current_function);
+
+        lhs = irb->CreateIsNotNull(lhs);
+
+        if (token_op == Token::AND_AND) {
+            irb->CreateCondBr(lhs, rhs_block, merge_block);
+        } else {
+            irb->CreateCondBr(lhs, merge_block, rhs_block);
+        }
+
+        BasicBlock *lhs_block = irb->GetInsertBlock();
+
+    	irb->SetInsertPoint(rhs_block);
+        rhs = irb->CreateIsNotNull(rhs);
+
+        irb->CreateBr(merge_block);
+        irb->SetInsertPoint(merge_block);
+
+        PHINode *cmp = irb->CreatePHI(llvm_type, 2);
+        cmp->addIncoming(lhs, lhs_block);
+        cmp->addIncoming(rhs, rhs_block);
+
+        return cmp;
+    }
+
+    return new_value;
 }
 
 Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
@@ -278,6 +428,7 @@ Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
 
 void LLVM_Converter::convert_function(Ast_Function *fun) {
 	auto fn = get_or_create_function(fun);
+	current_function = fn;
 
 	BasicBlock *entry_block = BasicBlock::Create(*llvm_context, "", fn);
 	irb->SetInsertPoint(entry_block);

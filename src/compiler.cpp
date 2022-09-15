@@ -38,9 +38,13 @@ Compiler::Compiler() {
 
 void Compiler::run(String entry_file) {
 	parse_file(entry_file);
+    if (errors_reported) return;
 
 	typer->type_check_scope(global_scope);
+    if (errors_reported) return;
+
 	llvm_converter->convert_scope(global_scope);
+    if (errors_reported) return;
 
 	llvm_converter->emit_llvm_ir();
 	// llvm_converter->emit_object_file();
@@ -97,48 +101,53 @@ Atom *Compiler::make_atom(String name) {
 }
 
 void Compiler::report_error(Source_Location location, const char *fmt, va_list args) {
-	printf("aleph: \"%s\"(%lld:%lld): ", to_c_string(location.file), location.line + 1, location.col + 1);
+	printf("aleph: \"%.*s\"(%lld:%lld): ", location.file.length, location.file.data, location.line + 1, location.col + 1);
 	vprintf(fmt, args);
     printf("\n");
 
-#if 0
-    String source = source_table.find_atom(location.file)->id;
+    String source = source_table.find_atom_hash(location.file)->id;
 
 	s32 line = 0;
-	s32 col = 0;
-	char *cur = source.data;
+	s32 pos = 0;
+	s32 line_start = 0;
+	s32 line_length = 0;
 
-	while (*cur++) {
-		col++;
-		if (*cur == '\n') {
+	char cur = source[pos];
+	while (cur) {
+		cur = source[++pos];
+
+		if (cur == '\n') {
 			line++;
-			col = 0;
+
+			if (line == location.line + 1) {
+				break;
+			}
+
+			line_start = pos + 1;
+			line_length = 0;
 		}
 
-		if (line == location.line) {
-			break;
-		}
+		line_length++;
 	}
+
+	String source_line = source.substring(line_start, line_length - 1);
 	
-	while (*cur != '\n' && *cur != 0) {
-		putc(*cur, stdout);
-
-		cur++;
-	}
-
-	putc('\n', stdout);
+	printf("%.*s\n", source_line.length, source_line.data);
 
 	for (s32 i = 0; i < location.col; ++i) {
-		putc(' ', stdout);
+		if (isspace(source_line[i])) {
+			putc(source_line[i], stdout);
+		} else {
+			putc(' ', stdout);
+		}
 	}
 
 	for (s32 i = 0; i < location.length; ++i) {
 		putc('*', stdout);
 	}
 
-	putc('\n', stdout);
+	puts("\n");
 
-#endif
 	errors_reported++;
 }
 
