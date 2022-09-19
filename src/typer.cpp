@@ -29,29 +29,61 @@ void Typer::type_check_scope(Ast_Scope *scope) {
 					type_check_variable_declaration(decl);
 				}
 			} break;
-			default: break;
+			default:
+				break;
 		}
 	}
 
 	for (auto stmt : scope->statements) {
-		switch (stmt->type) {
-			case Ast::RETURN: {
-				Ast_Return *ret = static_cast<Ast_Return *>(stmt);
+		type_check_statement(stmt);
+	}
+}
 
-				if (ret->return_value) {
-					infer_type(ret->return_value);
-					ret->return_value = check_expression_type_and_cast(ret->return_value, current_function->return_type);
+void Typer::type_check_statement(Ast_Expression *stmt) {
+	switch (stmt->type) {
+		case Ast::RETURN: {
+			Ast_Return *ret = static_cast<Ast_Return *>(stmt);
 
-					if (!types_match(ret->return_value->type_info, current_function->return_type)) {
-						compiler->report_error(ret, "Type of return value and return type of function do not match");
-					}
+			if (ret->return_value) {
+				infer_type(ret->return_value);
+				ret->return_value = check_expression_type_and_cast(ret->return_value, current_function->return_type);
 
-				} else if (current_function->return_type->type != Ast_Type_Info::VOID) {
-					compiler->report_error(ret, "Tried to return no value from non-void function");
+				if (!types_match(ret->return_value->type_info, current_function->return_type)) {
+					compiler->report_error(ret, "Type of return value and return type of function do not match");
 				}
-				break;
+
+			} else if (current_function->return_type->type != Ast_Type_Info::VOID) {
+				compiler->report_error(ret, "Tried to return no value from non-void function");
 			}
+			break;
 		}
+		case Ast::SCOPE: {
+			Ast_Scope *scope = static_cast<Ast_Scope *>(stmt);
+
+			type_check_scope(scope);
+
+			break;
+		}
+		case Ast::IF: {
+			Ast_If *_if = static_cast<Ast_If *>(stmt);
+
+			infer_type(_if->condition);
+			type_check_statement(_if->then_statement);
+			type_check_statement(_if->else_statement);
+
+			break;
+		}
+		case Ast::WHILE: {
+			Ast_While *_while = static_cast<Ast_While *>(stmt);
+
+			infer_type(_while->condition);
+			type_check_statement(_while->statement);
+
+			break;
+		}
+		default:
+			infer_type(stmt);
+			break;
 	}
 }
 
@@ -113,10 +145,10 @@ void Typer::infer_type(Ast_Expression *expression) {
 					lit->type_info = compiler->type_bool;
 					break;
 				case Ast_Literal::INT:
-					lit->type_info = compiler->type_s64;
+					lit->type_info = compiler->type_s32;
 					break;
 				case Ast_Literal::FLOAT:
-					lit->type_info = compiler->type_f64;
+					lit->type_info = compiler->type_f32;
 					break;
 			}
 		} break;
@@ -253,6 +285,71 @@ void Typer::infer_type(Ast_Expression *expression) {
 			}
 
 			binary->type_info = eval_type;
+		} break;
+		case Ast_Expression::UNARY: {
+			Ast_Unary *unary = static_cast<Ast_Unary *>(expression);
+			infer_type(unary->target);
+
+			auto target_type = unary->target->type_info;
+
+			switch (unary->op) {
+				case Token::PLUS_PLUS:
+				case Token::MINUS_MINUS:
+					if (!type_is_int(target_type)) {
+						compiler->report_error(unary, "Can't use ++ or -- on non-integer expression");
+						break;
+					}
+					break;
+				case '!':
+					if (!type_is_bool(target_type)) {
+						unary->target = make_compare_zero(unary->target);
+					}
+					target_type = compiler->type_bool;
+					break;
+				case '*': {
+					if (!type_is_pointer(target_type)) {
+						compiler->report_error(unary->target, "Can't dereference non variable");
+						break;
+					}
+
+					target_type = target_type->element_type;
+				} break;
+				case '&':
+					if (!expr_is_targatable(unary->target)) {
+						compiler->report_error(unary->target, "Can't reference non variable");
+						break;
+					}
+
+					Ast_Type_Info *new_ty = new Ast_Type_Info();
+
+					new_ty->type = Ast_Type_Info::POINTER;
+					new_ty->element_type = target_type;
+
+					target_type = new_ty;
+					break;
+			}
+
+			unary->type_info = target_type;
+		} break;
+		case Ast_Expression::SIZEOF: {
+			Ast_Sizeof *size = static_cast<Ast_Sizeof *>(expression);
+			size->type_info = compiler->type_s32;
+		} break;
+		case Ast_Expression::INDEX: {
+			Ast_Index *index = static_cast<Ast_Index *>(expression);
+
+			infer_type(index->expression);
+			infer_type(index->index);
+
+			if (!type_is_array(index->expression->type_info)) {
+				compiler->report_error(index->index, "Cannot index dereference non-array type");
+				break;
+			}
+
+			if (!type_is_int(index->index->type_info)) {
+				compiler->report_error(index->index, "Expected an integer type as index to array");
+				break;
+			}
 		} break;
 	}
 }

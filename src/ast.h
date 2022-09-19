@@ -22,10 +22,16 @@ struct Ast_Struct;
 struct Ast_Enum;
 struct Ast_Type_Alias;
 
+struct Ast_Sizeof;
+struct Ast_Unary;
 struct Ast_Binary;
 struct Ast_Identifier;
 struct Ast_Literal;
 struct Ast_Cast;
+struct Ast_Index;
+
+struct Ast_If;
+struct Ast_While;
 
 struct Ast_Return;
 
@@ -43,13 +49,22 @@ struct Ast {
 		RETURN = 9,
 		CALL = 10,
 		BINARY = 11,
+		UNARY = 12,
+		SIZEOF = 13,
+		IF = 14,
+		WHILE = 15,
+		INDEX = 16,
 	};
 
 	Source_Location location;
 	Type type;
 };
 
-struct Ast_Scope : Ast {
+struct Ast_Expression : Ast {
+	Ast_Type_Info *type_info = 0;
+};
+
+struct Ast_Scope : Ast_Expression {
 	Ast_Scope() { 
 		type = Ast::SCOPE;
 	}
@@ -60,9 +75,6 @@ struct Ast_Scope : Ast {
 	Array<Ast_Expression *> statements;
 };
 
-struct Ast_Expression : Ast {
-	Ast_Type_Info *type_info = 0;
-};
 
 struct Ast_Type_Info {
 	enum Base_Type : u32 {
@@ -70,6 +82,7 @@ struct Ast_Type_Info {
 
 		STRUCT,
 		ENUM,
+		ARRAY,
 
 		FUNCTION,
 
@@ -162,6 +175,24 @@ struct Ast_Type_Alias : Ast_Expression {
 	}
 };
 
+struct Ast_Sizeof : Ast_Expression {
+	Ast_Type_Info *target_type;
+
+	Ast_Sizeof() {
+		type = Ast::SIZEOF;
+	}
+};
+
+struct Ast_Unary : Ast_Expression {
+	Ast_Expression *target;
+	int op;
+	bool is_pre = false;
+
+	Ast_Unary() {
+		type = Ast::UNARY;
+	}
+};
+
 struct Ast_Binary : Ast_Expression {
 	Ast_Expression *lhs;
 	Ast_Expression *rhs;
@@ -206,6 +237,15 @@ struct Ast_Cast : Ast_Expression {
 	}
 };
 
+struct Ast_Index : Ast_Expression {
+	Ast_Expression *expression;	
+	Ast_Expression *index;
+
+	Ast_Index() {
+		type = Ast::INDEX;
+	}
+};
+
 struct Ast_Return : Ast_Expression {
 	Ast_Expression *return_value = 0;
 
@@ -223,6 +263,30 @@ struct Ast_Call : Ast_Expression {
 		type = Ast::CALL;
 	}
 };
+
+struct Ast_If : Ast_Expression {
+	Ast_Expression *condition = 0;
+    
+    Ast_Expression *then_statement = 0;
+    Ast_Expression *else_statement = 0;
+
+	Ast_If() {
+		type = Ast::IF;
+	}
+};
+
+struct Ast_While : Ast_Expression {
+    Ast_Expression *condition = 0;
+    Ast_Expression *statement = 0;
+
+    Ast_While() {
+    	type = Ast::WHILE;
+	}
+};
+
+inline bool type_is_array(Ast_Type_Info *type_info) {
+	return type_info->type == Ast_Type_Info::ARRAY;
+}
 
 inline bool type_is_bool(Ast_Type_Info *type_info) {
 	return type_info->type == Ast_Type_Info::BOOL;

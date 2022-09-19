@@ -14,6 +14,8 @@ struct Typer {
 
 	void type_check_scope(Ast_Scope *scope);
 
+	void type_check_statement(Ast_Expression *stmt);
+
 	void type_check_variable_declaration(Ast_Declaration *decl);
 
 	void type_check_function(Ast_Function *function);

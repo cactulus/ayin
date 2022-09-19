@@ -31,6 +31,8 @@ struct Parser {
 	Ast_Expression *parse_expression(int precedence = 1);
 
 	Ast_Expression *parse_binary(int precedence);
+	Ast_Expression *parse_unary();
+	Ast_Expression *parse_postfix();
 	Ast_Expression *parse_primary();
 
 	Ast_Identifier *parse_identifier();

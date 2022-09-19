@@ -118,6 +118,9 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 				irb->CreateRetVoid();
 			}
 		} break;
+		default: {
+			convert_expression(expression);
+		}
 	}
 }
 
@@ -140,7 +143,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 					return 0;
 			}
 
-		};
+		}
 		case Ast_Expression::IDENTIFIER: {
 			Ast_Identifier *id = static_cast<Ast_Identifier *>(expression);
 
@@ -156,7 +159,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				return ref;
 			}
 			return load(ref);
-		};
+		}
 		case Ast_Expression::CAST: {
 			Ast_Cast *cast = static_cast<Ast_Cast *>(expression);
             Value *value = convert_expression(cast->expression, is_lvalue);
@@ -203,7 +206,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 			}
 
 			return load(value);
-		};
+		}
 		case Ast::CALL: {
 			Ast_Call *call = static_cast<Ast_Call *>(expression);
 			Function *fun = get_or_create_function(call->resolved_function);
@@ -214,16 +217,70 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 			}
 
 			return irb->CreateCall(fun, ArrayRef<Value *>(arguments.data, arguments.length));
-		};
+		}
 		case Ast::BINARY: {
 			Ast_Binary *binary = static_cast<Ast_Binary *>(expression);
 
 			return convert_binary(binary);
-		};
-		default:
-			assert(0 && "LLVM emission for expression not implemented");
-			return 0;
+		}
+		case Ast::UNARY: {
+			Ast_Unary *unary = static_cast<Ast_Unary *>(expression);
+			switch (unary->op) {
+				case '&': {
+					return convert_expression(unary->target, true);
+				}
+				case '*': {
+					auto target = convert_expression(unary->target);
+    				return load(target);
+				}
+				case '!': {
+					auto target = convert_expression(unary->target);
+					return irb->CreateNot(target);
+				}
+				case '-': {
+					auto target = convert_expression(unary->target);
+					if (type_is_float(unary->type_info)) {
+						return irb->CreateFNeg(target);
+					} else {
+						return irb->CreateNeg(target);
+					}
+					
+				}
+				case Token::PLUS_PLUS:
+				case Token::MINUS_MINUS: {
+					auto target = convert_expression(unary->target, true);
+					auto loaded = load(target);
+					auto type = convert_type(unary->type_info);
+					Value *one;
+
+					if (unary->op == Token::PLUS_PLUS) {
+						one = ConstantInt::get(type, 1);
+					} else {
+						one = ConstantInt::get(type, -1);
+					}
+
+					auto val = irb->CreateAdd(loaded, one);
+					irb->CreateStore(val, target);
+
+					if (unary->is_pre) {
+						return val;
+					} else {
+						return loaded;
+					}
+				}
+			}
+		}
+		case Ast::SIZEOF: {
+			Ast_Sizeof *size = static_cast<Ast_Sizeof *>(expression);
+			Type *type = convert_type(size->target_type);
+			int byte_size = llvm_module->getDataLayout().getTypeSizeInBits(type);
+
+			return ConstantInt::get(type_i32, byte_size);
+		}
 	}
+
+	assert(0 && "LLVM expression emission unreachable");
+	return 0;
 }
 
 Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
@@ -297,7 +354,7 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
 
 	if (token_op == '=') {
 		new_value = rhs;
-	    auto target = convert_expression(binary->lhs, true);
+	    auto target = convert_expression(binary->lhs);
 
 	    irb->CreateStore(new_value, target);
 	} else if (binop_is_binary(token_op) || (token_op >= Token::ADD_EQ && token_op <= Token::MOD_EQ)) {

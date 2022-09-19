@@ -19,6 +19,14 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 	if (!ast) return 0;
 
 	switch (ast->type) {
+		case Ast::SCOPE: {
+			auto old = static_cast<Ast_Scope *>(ast);
+			auto _new = push_scope(old);
+
+			pop_scope();
+
+			return _new;
+		}
 		case Ast::DECLARATION: {
 			auto old = static_cast<Ast_Declaration *>(ast);
 			auto _new = COPY_NEW(Ast_Declaration);
@@ -125,6 +133,52 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 			COPY_F(op);
 			COPY_C(lhs);
 			COPY_C(rhs);
+
+			return _new;
+		}
+		case Ast::UNARY: {
+			auto old = static_cast<Ast_Unary *>(ast);
+			auto _new = COPY_NEW(Ast_Unary);
+
+			COPY_F(op);
+			COPY_C(target);
+			COPY_F(is_pre);
+
+			return _new;
+		}
+		case Ast::SIZEOF: {
+			auto old = static_cast<Ast_Sizeof *>(ast);
+			auto _new = COPY_NEW(Ast_Sizeof);
+
+			COPY_TYPE(target_type);
+
+			return _new;
+		}
+		case Ast::IF: {
+			auto old = static_cast<Ast_If *>(ast);
+			auto _new = COPY_NEW(Ast_If);
+
+			COPY_C(condition);
+			COPY_C(then_statement);
+			COPY_C(else_statement);
+
+			return _new;
+		}
+		case Ast::WHILE: {
+			auto old = static_cast<Ast_While *>(ast);
+			auto _new = COPY_NEW(Ast_While);
+
+			COPY_C(condition);
+			COPY_C(statement);
+
+			return _new;
+		}
+		case Ast::INDEX: {
+			auto old = static_cast<Ast_Index *>(ast);
+			auto _new = COPY_NEW(Ast_Index);
+
+			COPY_C(expression);
+			COPY_C(index);
 
 			return _new;
 		}

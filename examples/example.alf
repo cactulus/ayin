@@ -1,17 +1,11 @@
 struct Box {
 	a: s32,
-	b: s32
-}
-
-func add<T>(a: T, b: T) T {
-	return a + b;
+	b: s32,
+	c: s32
 }
 
 func main() s32 {
-	b: Box;
-
-	c := add(2, 4);
-	d := add(2.0, 4.0);
+	box: Box;
 
 	return 0;
 }

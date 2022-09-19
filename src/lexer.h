@@ -66,6 +66,8 @@ struct Token {
 		BREAK,
 		CONTINUE,
 		NIL,
+		CAST,
+		SIZEOF,
 
 		S8,
 		S16,

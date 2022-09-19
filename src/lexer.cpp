@@ -37,6 +37,8 @@ const char *keyword_tokens[] = {
 	"break",
 	"continue",
 	"nil",
+	"cast",
+	"sizeof",
 	"s8",
 	"s16",
 	"s32",
