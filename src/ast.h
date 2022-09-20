@@ -29,6 +29,7 @@ struct Ast_Identifier;
 struct Ast_Literal;
 struct Ast_Cast;
 struct Ast_Index;
+struct Ast_Member;
 
 struct Ast_If;
 struct Ast_While;
@@ -54,6 +55,7 @@ struct Ast {
 		IF = 14,
 		WHILE = 15,
 		INDEX = 16,
+		MEMBER = 17,
 	};
 
 	Source_Location location;
@@ -61,6 +63,8 @@ struct Ast {
 };
 
 struct Ast_Expression : Ast {
+	Ast_Expression *substitution = 0;
+
 	Ast_Type_Info *type_info = 0;
 };
 
@@ -105,6 +109,8 @@ struct Ast_Type_Info {
 	Ast_Type_Info *element_type = 0;
 	Ast_Identifier *unresolved_name;
 
+	s32 array_size = 0;
+
 	Ast_Struct *struct_decl;
 	Array<Ast_Type_Info *> struct_members;
 	Array<Enum_Member> enum_members;
@@ -112,11 +118,11 @@ struct Ast_Type_Info {
 	Array<Ast_Type_Info *> parameters;
 	Ast_Type_Info *return_type;
 
-	bool is_signed;
+	bool is_signed = false;
+	bool is_dynamic = false;
 
-	/* size in bytes */
-	s32 size;
-	s32 alignment;
+	/* size in bytes for int and float */
+	s32 size = 0;
 };
 
 struct Ast_Declaration : Ast_Expression {
@@ -246,6 +252,17 @@ struct Ast_Index : Ast_Expression {
 	}
 };
 
+struct Ast_Member : Ast_Expression {
+	Ast_Expression *left = 0;
+	Ast_Identifier *field;
+
+	s64 field_index = -1;
+
+	Ast_Member() {
+		type = Ast::MEMBER;
+	}
+};
+
 struct Ast_Return : Ast_Expression {
 	Ast_Expression *return_value = 0;
 
@@ -283,6 +300,10 @@ struct Ast_While : Ast_Expression {
     	type = Ast::WHILE;
 	}
 };
+
+inline bool type_is_struct(Ast_Type_Info *type_info) {
+	return type_info->type == Ast_Type_Info::STRUCT;
+}
 
 inline bool type_is_array(Ast_Type_Info *type_info) {
 	return type_info->type == Ast_Type_Info::ARRAY;

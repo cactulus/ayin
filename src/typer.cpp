@@ -4,6 +4,7 @@
 #include "common.h"
 
 static bool expr_is_targatable(Ast_Expression *expression);
+static void copy_location_info(Ast *left, Ast *right);
 
 Typer::Typer(Compiler *compiler) {
 	this->compiler = compiler;
@@ -135,6 +136,7 @@ void Typer::type_check_function(Ast_Function *function) {
 }
 
 void Typer::infer_type(Ast_Expression *expression) {
+	while(expression->substitution) expression = expression->substitution;
 	if (expression->type_info) return;
 
 	switch (expression->type) {
@@ -351,6 +353,90 @@ void Typer::infer_type(Ast_Expression *expression) {
 				break;
 			}
 		} break;
+		case Ast_Expression::MEMBER: {
+			Ast_Member *member = static_cast<Ast_Member *>(expression);
+
+			infer_type(member->left);
+			infer_type(member->field);
+
+			if (type_is_pointer(member->left->type_info)) {
+				auto un = new Ast_Unary();
+				un->op = '*';
+				un->target = member->left;
+				copy_location_info(un, member->left);
+
+				infer_type(un);
+
+                member->left = un;
+            }
+
+            Atom *field_atom = member->field->atom;
+			Ast_Type_Info *left_type = member->left->type_info;
+
+			if (type_is_array(left_type)) {
+ 				if (left_type->array_size == -1) {
+                    if (field_atom == compiler->atom_data) {
+                        member->field_index = 0;
+                        member->type_info = make_pointer_type(left_type->element_type);
+                    } else if (field_atom == compiler->atom_length) {
+                        member->field_index = 1;
+                        member->type_info = compiler->type_s64;
+                    } else if (left_type->is_dynamic && field_atom == compiler->atom_capacity) {
+                        member->field_index = 2;
+                        member->type_info = compiler->type_s64;
+                    } else {
+                        String field_name = field_atom->id;
+                        compiler->report_error(member, "No member '%.*s' in type array.\n", field_name.length, field_name.data);
+                    }
+                } else {
+                    if (field_atom == compiler->atom_data) {
+                        auto index_lit = make_integer_literal(0, compiler->type_s64);
+                        copy_location_info(index_lit, member);
+                        
+                        Ast_Index *index = new Ast_Index();
+						index->expression = member->left;
+						index->index = index_lit;
+                        copy_location_info(index, member);
+                        
+                        Ast_Unary *addr = new Ast_Unary();
+						addr->op = '*';
+						addr->target = index;
+                        copy_location_info(addr, member);
+                        
+                        infer_type(addr);
+                        member->substitution = addr;
+                    } else if (field_atom == compiler->atom_length) {
+                        auto lit = make_integer_literal(left_type->array_size, compiler->type_s64);
+                        copy_location_info(lit, member);
+                        member->substitution = lit;
+                    } else {
+                        String field_name = field_atom->id;
+                        compiler->report_error(member, "No member '%.*s' in known-size array.\n", field_name.length, field_name.data);
+                    }
+                }
+			} else if (type_is_struct(left_type)) {
+				bool found = false;
+				auto strct = left_type->struct_decl;
+				int index = 0;
+
+                for (auto mem : strct->members) {
+                    if (mem->identifier->atom == field_atom) {
+                        found = true;
+                        
+                        member->field_index = index;
+                        member->type_info = mem->type_info;
+                        break;
+                    }
+                    index++;
+                }
+                
+                if (!found) {
+                    String field_name = field_atom->id;
+                    String name = left_type->struct_decl->identifier->atom->id;
+                    compiler->report_error(member, "No member '%.*s' in struct %.*s.\n", field_name.length, field_name.data, name.length, name.data);
+                }
+			}
+		} break;
 	}
 }
 
@@ -538,7 +624,6 @@ bool Typer::can_fill_polymorph(Ast_Type_Info *par_type, Ast_Type_Info *arg_type)
 
 bool Typer::types_match(Ast_Type_Info *t1, Ast_Type_Info *t2) {
 	if (t1->type != t2->type) return false;
-    if (t1->size != t2->size) return false;
     
     if (t1->type == Ast_Type_Info::POINTER) {
         return types_match(t1->element_type, t2->element_type);
@@ -547,8 +632,14 @@ bool Typer::types_match(Ast_Type_Info *t1, Ast_Type_Info *t2) {
     if (t1->type == Ast_Type_Info::STRUCT) {
     	return t1->struct_decl == t2->struct_decl;
     }
+
+    if (t1->type == Ast_Type_Info::ARRAY) {
+    	return types_match(t1->element_type, t2->element_type) &&
+    		t1->array_size == t2->array_size &&
+    		t1->is_dynamic == t2->is_dynamic;
+    }
     
-    return true;
+    return t1->size == t2->size;
 }
 
 s32 Typer::get_pointer_level(Ast_Type_Info *type_info) {
@@ -624,6 +715,22 @@ void Typer::mangle_type(String_Builder *builder, Ast_Type_Info *type) {
 				mangle_type(builder, mem);
 			}
 		} break;
+		case Ast_Type_Info::ARRAY: {
+			builder->putchar('A');
+
+			if (type->array_size >= 0) {
+				builder->putchar('k');
+				builder->print("%d", type->array_size);
+			} else if (type->is_dynamic) {
+				builder->putchar('d');
+			} else {
+				builder->putchar('s');
+			}
+			
+			builder->putchar('_');
+			mangle_type(builder, type->element_type);
+			builder->putchar('_');
+		} break;
 		default: assert(0);
 	}
 }
@@ -654,11 +761,27 @@ Ast_Expression *Typer::make_compare_zero(Ast_Expression *target) {
 	return be;
 }
 
+Ast_Literal *Typer::make_integer_literal(s64 value, Ast_Type_Info *type_info, Ast *source_loc) {
+    Ast_Literal *lit = new Ast_Literal();
+    lit->literal_type = Ast_Literal::INT;
+    lit->int_value = value;
+    lit->type_info = type_info;
+    
+    if (source_loc) copy_location_info(lit, source_loc);
+    return lit;
+}
+
 bool expr_is_targatable(Ast_Expression *expression) {
 	switch (expression->type) {
 	case Ast_Expression::IDENTIFIER:
+	case Ast_Expression::MEMBER:
+	case Ast_Expression::INDEX:
 		return true;
 	default:
 		return false;
 	}
+}
+
+void copy_location_info(Ast *left, Ast *right) {
+    left->location = right->location;
 }

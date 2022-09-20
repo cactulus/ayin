@@ -35,15 +35,15 @@ struct Compiler {
 	Ast_Type_Info *type_f64;
 
 	Atom *atom_main;
+	Atom *atom_data;
+	Atom *atom_length;
+	Atom *atom_capacity;
 
 	Compiler();
 
 	void run(String entry_file);
 
 	void parse_file(String file_path);
-
-	Ast_Type_Info *make_int_type(bool is_signed, s32 bytes);
-	Ast_Type_Info *make_float_type(s32 bytes);
 
 	Atom *make_atom(String name);
 
@@ -52,51 +52,11 @@ struct Compiler {
 	void report_error(Ast *ast, const char *fmt, ...);
 };
 
-inline Ast_Expression *find_declaration_by_name(Atom *name, Ast_Scope *scope) {
-	Ast_Scope *temp = scope;
+Ast_Type_Info *make_int_type(bool is_signed, s32 bytes);
+Ast_Type_Info *make_float_type(s32 bytes);
+Ast_Type_Info *make_pointer_type(Ast_Type_Info *element_type);
 
-	while (true) {
-		for (auto decl : temp->declarations) {
-			switch (decl->type) {
-				case Ast::STRUCT: {
-					auto strct = static_cast<Ast_Struct *>(decl);
-					if (strct->identifier->atom->hash == name->hash)
-						return decl;
-				} break;
-				case Ast::TYPE_ALIAS: {
-					auto ta = static_cast<Ast_Type_Alias *>(decl);
-					if (ta->identifier->atom->hash == name->hash)
-						return decl;
-				} break;
-				case Ast::DECLARATION: {
-					auto var_decl = static_cast<Ast_Declaration *>(decl);
-					if (var_decl->identifier->atom->hash == name->hash)
-						return decl;
-				} break;
-				case Ast::FUNCTION: {
-					auto fun = static_cast<Ast_Function *>(decl);
-					if (fun->identifier->atom->hash == name->hash)
-						return decl;
-				} break;
-				case Ast::ENUM: {
-					auto e = static_cast<Ast_Enum *>(decl);
-					if (e->identifier->atom->hash == name->hash)
-						return decl;
-				} break;
-			}
-		}
-
-		if (!temp->parent) {
-			break;
-		}
-		temp = temp->parent;
-	}
-
-	return 0;
-}
-
-inline Ast_Expression *find_declaration_by_id(Ast_Identifier *id) {
-	return find_declaration_by_name(id->atom, id->scope);
-}
+Ast_Expression *find_declaration_by_name(Atom *name, Ast_Scope *scope);
+Ast_Expression *find_declaration_by_id(Ast_Identifier *id);
 
 #endif

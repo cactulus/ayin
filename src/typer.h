@@ -39,8 +39,9 @@ struct Typer {
 	String mangle_name(Ast_Function *decl);
 	void mangle_type(String_Builder *builder, Ast_Type_Info *type);
 
-
 	Ast_Expression *make_compare_zero(Ast_Expression *target);
+
+	Ast_Literal *make_integer_literal(s64 value, Ast_Type_Info *type_info, Ast *source_loc=0);
 };
 
 #endif

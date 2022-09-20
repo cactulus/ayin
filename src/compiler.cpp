@@ -17,7 +17,6 @@ Compiler::Compiler() {
 
 	type_bool = new Ast_Type_Info();
 	type_bool->type = Ast_Type_Info::BOOL;
-	type_bool->alignment = 1;
 	type_bool->size = 1;
 
 	type_s8  = make_int_type(true, 1);
@@ -34,6 +33,9 @@ Compiler::Compiler() {
     type_f64 = make_float_type(8);
 
     atom_main = make_atom(to_string("main"));
+    atom_data = make_atom(to_string("data"));
+    atom_length = make_atom(to_string("length"));
+    atom_capacity = make_atom(to_string("capacity"));
 }
 
 void Compiler::run(String entry_file) {
@@ -69,21 +71,73 @@ void Compiler::parse_file(String file_path) {
 	parser.parse();
 }
 
-Ast_Type_Info *Compiler::make_int_type(bool is_signed, s32 bytes) {
+Ast_Type_Info *make_int_type(bool is_signed, s32 bytes) {
 	Ast_Type_Info *info = new Ast_Type_Info();
     info->type = Ast_Type_Info::INT;
     info->is_signed = is_signed;
     info->size = bytes;
-    info->alignment = info->size;
     return info;
 }
 
-Ast_Type_Info *Compiler::make_float_type(s32 bytes) {
+Ast_Type_Info *make_float_type(s32 bytes) {
 	Ast_Type_Info *info = new Ast_Type_Info();
     info->type = Ast_Type_Info::FLOAT;
     info->size = bytes;
-    info->alignment = info->size;
     return info;
+}
+
+Ast_Type_Info *make_pointer_type(Ast_Type_Info *element_type) {
+	Ast_Type_Info *info = new Ast_Type_Info();
+    info->type = Ast_Type_Info::POINTER;
+    info->element_type = element_type;
+    return info;
+}
+
+Ast_Expression *find_declaration_by_name(Atom *name, Ast_Scope *scope) {
+	Ast_Scope *temp = scope;
+
+	while (true) {
+		for (auto decl : temp->declarations) {
+			switch (decl->type) {
+				case Ast::STRUCT: {
+					auto strct = static_cast<Ast_Struct *>(decl);
+					if (strct->identifier->atom->hash == name->hash)
+						return decl;
+				} break;
+				case Ast::TYPE_ALIAS: {
+					auto ta = static_cast<Ast_Type_Alias *>(decl);
+					if (ta->identifier->atom->hash == name->hash)
+						return decl;
+				} break;
+				case Ast::DECLARATION: {
+					auto var_decl = static_cast<Ast_Declaration *>(decl);
+					if (var_decl->identifier->atom->hash == name->hash)
+						return decl;
+				} break;
+				case Ast::FUNCTION: {
+					auto fun = static_cast<Ast_Function *>(decl);
+					if (fun->identifier->atom->hash == name->hash)
+						return decl;
+				} break;
+				case Ast::ENUM: {
+					auto e = static_cast<Ast_Enum *>(decl);
+					if (e->identifier->atom->hash == name->hash)
+						return decl;
+				} break;
+			}
+		}
+
+		if (!temp->parent) {
+			break;
+		}
+		temp = temp->parent;
+	}
+
+	return 0;
+}
+
+Ast_Expression *find_declaration_by_id(Ast_Identifier *id) {
+	return find_declaration_by_name(id->atom, id->scope);
 }
 
 Atom *Compiler::make_atom(String name) {

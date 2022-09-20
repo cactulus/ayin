@@ -495,18 +495,33 @@ Ast_Expression *Parser::parse_postfix() {
 		return expr;
 	}
 
-	if (expect('[')) {
-		Ast_Index *index = AST_NEW(Ast_Index);
-		next();
+    while (!expect(Token::END_OF_FILE)) {
+        if (expect('.')) {
+            Ast_Member *member = AST_NEW(Ast_Member);
+            next();
+            
+            auto right = parse_identifier();
+            if (!right) return nullptr;
+            
+            member->left = target;
+            member->field = right;
+            
+            target = member;
+        } else if (expect('[')) {
+			Ast_Index *index = AST_NEW(Ast_Index);
+            next();
 
-		index->expression = target;
-		index->index = parse_expression();
-		
-		if (!expect_eat(']')) {
-			compiler->report_error(peek(), "Expected ']'");
-		}
-
-		return index;
+            index->expression = target;
+            index->index = parse_expression();
+            
+			if (!expect_eat(']')) {
+				compiler->report_error(peek(), "Expected ']'");
+			}
+            
+            target = index;
+        } else {
+            break;
+        }
 	}
 
 	return target;
@@ -660,11 +675,25 @@ Ast_Type_Info *Parser::parse_type_specifier() {
 		type_info = new Ast_Type_Info();
 		type_info->type = Ast_Type_Info::POINTER;
 		type_info->element_type = element_type;
+		type_info->size = 8;
 		return type_info;
 	}
 
 	if (t->type == '[') {
 		next();
+		
+		Token *num_token = peek();
+		s32 arr_size = -1;
+		bool dynamic = false;
+
+		if (num_token->type == Token::INT_LIT) {
+			next();
+			arr_size = num_token->int_value;
+			dynamic = false;
+		} else if (expect(Token::DOT_DOT)) {
+			next();
+			dynamic = true;
+		}
 
 		if (!expect_eat(']')) {
 			compiler->report_error(peek(), "Expected ']'");
@@ -679,6 +708,8 @@ Ast_Type_Info *Parser::parse_type_specifier() {
 
 		type_info = new Ast_Type_Info();
 		type_info->type = Ast_Type_Info::ARRAY;
+		type_info->is_dynamic = dynamic;
+		type_info->array_size = arr_size; 
 		type_info->element_type = element_type;
 		return type_info;
 	}

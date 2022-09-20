@@ -182,6 +182,16 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 
 			return _new;
 		}
+		case Ast::MEMBER: {
+			auto old = static_cast<Ast_Member *>(ast);
+			auto _new = COPY_NEW(Ast_Member);
+
+			COPY_C(left);
+			COPY_C(field);
+			COPY_F(field_index);
+
+			return _new;
+		}
 	}
 
 	assert(0);

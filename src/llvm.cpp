@@ -87,7 +87,6 @@ void LLVM_Converter::convert_scope(Ast_Scope *scope) {
 void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 	switch (expression->type) {
 		case Ast::STRUCT: {
-			
 		} break;
 		case Ast::FUNCTION: {
 			auto fun = static_cast<Ast_Function *>(expression);
@@ -118,6 +117,62 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 				irb->CreateRetVoid();
 			}
 		} break;
+		case Ast::IF: {
+			Ast_If *_if = static_cast<Ast_If *>(expression);
+            auto cond = convert_expression(_if->condition);
+            
+            auto current_block = irb->GetInsertBlock();
+            
+            BasicBlock *next_block = BasicBlock::Create(*llvm_context, "", current_block->getParent());
+            BasicBlock *then_block = nullptr;
+            BasicBlock *else_block = nullptr;
+            
+            BasicBlock *failure_target = next_block;
+            
+            then_block = BasicBlock::Create(*llvm_context, "", current_block->getParent());
+            if (_if->then_statement) {
+                irb->SetInsertPoint(then_block);
+                convert_statement(_if->then_statement);
+                
+            }
+            if (!irb->GetInsertBlock()->getTerminator()) irb->CreateBr(next_block);
+            
+            if (_if->else_statement) {
+                else_block = BasicBlock::Create(*llvm_context, "", current_block->getParent());
+                irb->SetInsertPoint(else_block);
+                convert_statement(_if->else_statement);
+                
+                if (!irb->GetInsertBlock()->getTerminator()) irb->CreateBr(next_block);
+                
+                failure_target = else_block;
+            }
+            
+            irb->SetInsertPoint(current_block);
+            irb->CreateCondBr(cond, then_block, failure_target);
+            irb->SetInsertPoint(next_block);
+		} break;
+		case Ast::WHILE: {
+			Ast_While *_while = static_cast<Ast_While *>(expression);
+
+     		auto current_block = irb->GetInsertBlock();
+            
+            BasicBlock *next_block = BasicBlock::Create(*llvm_context, "", current_block->getParent());
+            BasicBlock *loop_header = BasicBlock::Create(*llvm_context, "", current_block->getParent());
+            BasicBlock *loop_body = BasicBlock::Create(*llvm_context, "", current_block->getParent());
+            
+            irb->CreateBr(loop_header);
+            
+            irb->SetInsertPoint(loop_header);
+            auto cond = convert_expression(_while->condition);
+            irb->SetInsertPoint(loop_header);
+            irb->CreateCondBr(cond, loop_body, next_block);
+            
+            irb->SetInsertPoint(loop_body);
+            convert_statement(_while->statement);
+            if (!irb->GetInsertBlock()->getTerminator()) irb->CreateBr(loop_header);
+            
+            irb->SetInsertPoint(next_block);
+		} break;
 		default: {
 			convert_expression(expression);
 		}
@@ -125,6 +180,8 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 }
 
 Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lvalue) {
+	while(expression->substitution) expression = expression->substitution;
+
 	switch (expression->type) {
 		case Ast_Expression::LITERAL: {
 			Ast_Literal *literal = static_cast<Ast_Literal *>(expression);
@@ -276,6 +333,47 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 			int byte_size = llvm_module->getDataLayout().getTypeSizeInBits(type);
 
 			return ConstantInt::get(type_i32, byte_size);
+		}
+		case Ast::INDEX: {
+			Ast_Index *array_index = static_cast<Ast_Index *>(expression);
+			auto array = convert_expression(array_index->expression, true);
+            auto index = convert_expression(array_index->index);
+            
+            auto type = array_index->expression->type_info;
+            if (type_is_array(type) && type->array_size == -1) {
+                array = gep(array, {ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, 0)});
+                array = load(array);
+                auto element = gep(array, index);
+                
+                if (!is_lvalue) return load(element);
+                return element;
+            } else if (type_is_pointer(type)) {
+                auto ptr = load(array);
+                auto element = gep(ptr, {index});
+                
+                if (!is_lvalue) return load(element);
+                return element;
+            }
+            
+            auto element = gep(array, {ConstantInt::get(type_i32, 0), index});
+            
+            if (!is_lvalue) return load(element);
+            return element;
+
+			return 0;
+		}
+		case Ast::MEMBER: {
+			Ast_Member *member = static_cast<Ast_Member *>(expression);
+			auto lhs = convert_expression(member->left, true);
+            
+			if (auto constant = dyn_cast<Constant>(lhs)) {
+				return irb->CreateExtractValue(constant, member->field_index);
+			} else {
+				auto valueptr = gep(lhs, { ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, member->field_index) });
+				if (!is_lvalue) return load(valueptr);
+				return valueptr;
+			}
+			return 0;
 		}
 	}
 
@@ -478,6 +576,22 @@ Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
         return FunctionType::get(return_type, ArrayRef<Type *>(arg_types.data, arg_types.length), false);
 	}
 
+	if (type_info->type == Ast_Type_Info::ARRAY) {
+		auto element = convert_type(type_info->element_type);
+
+		if (type_info->array_size >= 0) {
+			return ArrayType::get(element, type_info->array_size);
+		} else {
+			auto data = element->getPointerTo();
+			auto count = type_i64;
+
+			if (type_info->is_dynamic) {
+				return StructType::get(*llvm_context, {data, count, count});	
+			} else {
+				return StructType::get(*llvm_context, {data, count});	
+			}
+		}
+	}
 
 	assert(0 && "Should be unreachable");
 	return 0;
@@ -575,4 +689,8 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
 
 Value *LLVM_Converter::load(Value *value) {
 	return irb->CreateLoad(value->getType()->getPointerElementType(), value);
+}
+
+Value *LLVM_Converter::gep(llvm::Value *ptr, ArrayRef<Value *> idx_list) {
+	return irb->CreateGEP(ptr->getType()->getPointerElementType(), ptr, idx_list);
 }

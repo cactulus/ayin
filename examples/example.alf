@@ -5,7 +5,6 @@ struct Box {
 }
 
 func main() s32 {
-	box: Box;
 
 	return 0;
 }

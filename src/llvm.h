@@ -15,6 +15,8 @@ namespace llvm {
     class ConstantFolder;
     class IRBuilderDefaultInserter;
 
+    template<typename T> class ArrayRef;
+
 	template<typename T, typename Inserter> class IRBuilder;
 };
 
@@ -58,6 +60,7 @@ struct LLVM_Converter {
 
 	llvm::Function *get_or_create_function(Ast_Function *function); 
 	llvm::Value *load(llvm::Value *value);
+	llvm::Value *gep(llvm::Value *ptr, llvm::ArrayRef<llvm::Value *> idx_list);
 };
 
 #endif

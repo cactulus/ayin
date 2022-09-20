@@ -70,6 +70,8 @@ const Token::Type keyword_token_types[] = {
 	Token::BREAK,
 	Token::CONTINUE,
 	Token::NIL,
+	Token::CAST,
+	Token::SIZEOF,
 	Token::S8,
 	Token::S16,
 	Token::S32,
