@@ -19,7 +19,18 @@ void Typer::type_check_scope(Ast_Scope *scope) {
 			} break;
 			case Ast::FUNCTION: {
 				auto fun = static_cast<Ast_Function *>(decl);
-				if (fun->is_template_function)
+
+				if ((fun->flags & FUNCTION_EXTERNAL) && (fun->flags & FUNCTION_TEMPLATE)) {
+					compiler->report_error(fun, "Function cannot be external and be a template function at the same time");
+					break;
+				}
+
+				if ((fun->flags & FUNCTION_VARARG) && !(fun->flags & FUNCTION_EXTERNAL)) {
+					compiler->report_error(fun, "Only external functions can be marked vararg");
+					break;
+				}
+
+				if (fun->flags & FUNCTION_TEMPLATE)
 					break;
 
 				type_check_function(fun);
@@ -41,6 +52,8 @@ void Typer::type_check_scope(Ast_Scope *scope) {
 }
 
 void Typer::type_check_statement(Ast_Expression *stmt) {
+	if (!stmt) return;
+
 	switch (stmt->type) {
 		case Ast::RETURN: {
 			Ast_Return *ret = static_cast<Ast_Return *>(stmt);
@@ -82,6 +95,123 @@ void Typer::type_check_statement(Ast_Expression *stmt) {
 
 			break;
 		}
+		case Ast::FOR: {
+			Ast_For *_for = static_cast<Ast_For*>(stmt);
+
+			if (!_for->initial_iterator_expression) {
+				compiler->report_error(_for, "'for' must be followed by an variable declaration.\n");
+				return;
+			}
+
+			type_check_statement(_for->initial_iterator_expression);
+
+			if (!_for->upper_range_expression) {
+				auto init_type = _for->initial_iterator_expression->type_info;
+				if (type_is_int(init_type)) {
+					compiler->report_error(_for, "'for' must specify an upper-range. Ex: for 0..1\n");
+					return;
+				}
+			} else {
+				auto init_type = _for->initial_iterator_expression->type_info;
+				if (!type_is_int(init_type)) {
+					compiler->report_error(_for, "'..' operator may only be preceeded by an integer expression.\n");
+					return;
+				}
+
+				infer_type(_for->upper_range_expression);
+
+				auto init_expr = _for->initial_iterator_expression;
+				auto upper_expr = _for->upper_range_expression;
+			
+				auto upper_type = _for->upper_range_expression->type_info;
+
+				check_expression_type_and_cast(init_expr, upper_expr->type_info);
+				
+				init_type = _for->initial_iterator_expression->type_info;
+				if (!type_is_int(upper_type)) {
+					compiler->report_error(_for->upper_range_expression, "'for' upper-range must be an integer expression.\n");
+					return;
+				}
+
+				if (!types_match(init_type, upper_type)) {
+					compiler->report_error(_for, "'for' lower-range and upper-range types do not match!\n");
+				}
+			}
+
+			auto init_type = _for->initial_iterator_expression->type_info;
+			if (!type_is_int(init_type)) {
+				bool supports_iteration_interface = type_is_array(init_type);
+
+				if (!supports_iteration_interface) {
+					compiler->report_error(_for->initial_iterator_expression, "Type of expression in 'for' condition is not iterable. Must be an integer range or an array");
+					return;
+				}
+			}
+
+			if (!type_is_int(init_type)) {
+				auto count_expr = make_member(_for->initial_iterator_expression, compiler->atom_length);
+				infer_type(count_expr);
+
+				auto zero = make_integer_literal(0, count_expr->type_info);
+				auto it_index_ident = make_identifier(compiler->atom_it_index);
+				copy_location_info(it_index_ident, _for);
+				it_index_ident->scope = _for->iterator_declaration_scope;
+				{
+					Ast_Declaration *decl = new Ast_Declaration();
+					copy_location_info(decl, _for);
+					decl->identifier = it_index_ident;
+					copy_location_info(decl->identifier, _for);
+					decl->initializer = zero;
+
+					_for->iterator_index_decl = decl;
+
+					type_check_statement(_for->iterator_index_decl);
+					if (compiler->errors_reported) return;
+				}
+
+				{
+					auto indexed = make_index(_for->initial_iterator_expression, it_index_ident);
+
+					Ast_Declaration *decl = new Ast_Declaration();
+					copy_location_info(decl, _for);
+					decl->identifier = make_identifier(compiler->atom_it);
+					copy_location_info(decl->identifier, decl);
+					decl->initializer = indexed;
+					decl->type_info = indexed->type_info;
+
+					_for->iterator_decl = decl;
+				}
+
+				assert(_for->upper_range_expression == nullptr);
+				_for->upper_range_expression = count_expr;
+			}
+
+			if (_for->initial_iterator_expression->type == Ast_Expression::DECLARATION) {
+				_for->iterator_decl = static_cast<Ast_Declaration *>(_for->initial_iterator_expression);
+			} else if (!_for->iterator_decl) {
+				// for integer ranges only
+				Ast_Declaration *decl = new Ast_Declaration();
+				copy_location_info(decl, _for);
+				decl->identifier = make_identifier(compiler->atom_it);
+				copy_location_info(decl->identifier, _for);
+				decl->identifier->scope = _for->iterator_declaration_scope;
+				decl->initializer = _for->initial_iterator_expression;
+
+				_for->iterator_decl = decl;
+			}
+
+			_for->iterator_declaration_scope->declarations.add(_for->iterator_decl);
+			if (_for->iterator_index_decl) _for->iterator_declaration_scope->declarations.add(_for->iterator_index_decl);
+
+			type_check_statement(_for->iterator_decl);
+			
+			type_check_statement(_for->body);
+
+			break;
+		}
+		case Ast::CONTINUE:
+		case Ast::BREAK:
+			break;
 		default:
 			infer_type(stmt);
 			break;
@@ -132,7 +262,9 @@ void Typer::type_check_function(Ast_Function *function) {
 
 	function->linkage_name = mangle_name(function);
 
-	type_check_scope(function->block_scope);
+	if (!(function->flags & FUNCTION_EXTERNAL)) {
+		type_check_scope(function->block_scope);
+	}
 }
 
 void Typer::infer_type(Ast_Expression *expression) {
@@ -140,6 +272,10 @@ void Typer::infer_type(Ast_Expression *expression) {
 	if (expression->type_info) return;
 
 	switch (expression->type) {
+		case Ast_Expression::DECLARATION: {
+			auto var_decl = static_cast<Ast_Declaration *>(expression);
+			type_check_variable_declaration(var_decl);
+		} break;
 		case Ast_Expression::LITERAL: {
 			Ast_Literal *lit = static_cast<Ast_Literal *>(expression);
 			switch (lit->literal_type) {
@@ -186,7 +322,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 			Ast_Function *function = static_cast<Ast_Function *>(decl);
 			Ast_Type_Info *function_type = function->type_info;
 
-			if (function->is_template_function) {
+			if (function->flags & FUNCTION_TEMPLATE) {
 				function = get_polymorph_function(call, function);
 				call->type_info = function->return_type;
 				call->resolved_function = function;
@@ -352,12 +488,13 @@ void Typer::infer_type(Ast_Expression *expression) {
 				compiler->report_error(index->index, "Expected an integer type as index to array");
 				break;
 			}
+
+			index->type_info = index->expression->type_info->element_type;
 		} break;
 		case Ast_Expression::MEMBER: {
 			Ast_Member *member = static_cast<Ast_Member *>(expression);
 
 			infer_type(member->left);
-			infer_type(member->field);
 
 			if (type_is_pointer(member->left->type_info)) {
 				auto un = new Ast_Unary();
@@ -405,10 +542,12 @@ void Typer::infer_type(Ast_Expression *expression) {
                         
                         infer_type(addr);
                         member->substitution = addr;
+						member->type_info = compiler->type_s64;
                     } else if (field_atom == compiler->atom_length) {
                         auto lit = make_integer_literal(left_type->array_size, compiler->type_s64);
                         copy_location_info(lit, member);
                         member->substitution = lit;
+						member->type_info = compiler->type_s64;
                     } else {
                         String field_name = field_atom->id;
                         compiler->report_error(member, "No member '%.*s' in known-size array.\n", field_name.length, field_name.data);
@@ -555,7 +694,7 @@ Ast_Function *Typer::get_polymorph_function(Ast_Call *call, Ast_Function *templa
 
 Ast_Function *Typer::make_polymorph_function(Ast_Function *template_function, Array<Ast_Expression *> *arguments) {
 	auto poly = compiler->copier->copy_function(template_function);
-	poly->is_template_function = false;
+	poly->flags &= ~FUNCTION_TEMPLATE;
 
 	for (s64 i = 0; i < arguments->length; ++i) {
 		auto par = poly->parameter_scope->declarations[i];
@@ -671,7 +810,9 @@ bool Typer::type_points_to_void(Ast_Type_Info *type_info) {
 
 String Typer::mangle_name(Ast_Function *decl) {
 	String name = decl->identifier->atom->id;
-	if (decl->identifier->atom == compiler->atom_main) return name;
+
+	if ((decl->flags & FUNCTION_EXTERNAL) || decl->identifier->atom == compiler->atom_main)
+		return name;
 
 	String_Builder sb;
     sb.print("%.*s", name.length, name.data);
@@ -769,6 +910,30 @@ Ast_Literal *Typer::make_integer_literal(s64 value, Ast_Type_Info *type_info, As
     
     if (source_loc) copy_location_info(lit, source_loc);
     return lit;
+}
+
+Ast_Identifier *Typer::make_identifier(Atom *name) {
+	Ast_Identifier *ident = new Ast_Identifier();
+	ident->atom = name;
+	return ident;
+}
+
+Ast_Member *Typer::make_member(Ast_Expression *aggregate_expression, Atom *field) {
+	auto ident = make_identifier(field);
+	copy_location_info(ident, aggregate_expression);
+
+	Ast_Member *mem = new Ast_Member();
+	copy_location_info(mem, aggregate_expression);
+	mem->left = aggregate_expression;
+	mem->field = ident;
+	return mem;
+}
+
+Ast_Index *Typer::make_index(Ast_Expression *array, Ast_Expression *index) {
+	Ast_Index *indx = new Ast_Index();
+	indx->expression = array;
+	indx->index = index;
+	return indx;
 }
 
 bool expr_is_targatable(Ast_Expression *expression) {

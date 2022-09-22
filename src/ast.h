@@ -11,6 +11,7 @@ namespace llvm {
 struct Ast;
 
 struct Ast_Scope;
+struct Ast_Directive;
 
 struct Ast_Expression;
 
@@ -33,6 +34,9 @@ struct Ast_Member;
 
 struct Ast_If;
 struct Ast_While;
+struct Ast_For;
+struct Ast_Continue;
+struct Ast_Break;
 
 struct Ast_Return;
 
@@ -56,6 +60,10 @@ struct Ast {
 		WHILE = 15,
 		INDEX = 16,
 		MEMBER = 17,
+		CONTINUE = 18,
+		BREAK = 19,
+		DIRECTIVE = 20,
+		FOR = 21,
 	};
 
 	Source_Location location;
@@ -68,6 +76,14 @@ struct Ast_Expression : Ast {
 	Ast_Type_Info *type_info = 0;
 };
 
+struct Ast_Directive : Ast_Expression {
+	Ast_Identifier *identifier = 0;
+
+	Ast_Directive() {
+		type = Ast::DIRECTIVE;
+	}
+};
+
 struct Ast_Scope : Ast_Expression {
 	Ast_Scope() { 
 		type = Ast::SCOPE;
@@ -78,7 +94,6 @@ struct Ast_Scope : Ast_Expression {
 	Array<Ast_Expression *> declarations;
 	Array<Ast_Expression *> statements;
 };
-
 
 struct Ast_Type_Info {
 	enum Base_Type : u32 {
@@ -136,6 +151,10 @@ struct Ast_Declaration : Ast_Expression {
 	}
 };
 
+const u8 FUNCTION_EXTERNAL = 0x1;
+const u8 FUNCTION_TEMPLATE = 0x2;
+const u8 FUNCTION_VARARG = 0x4;
+
 struct Ast_Function : Ast_Expression {
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
@@ -146,7 +165,8 @@ struct Ast_Function : Ast_Expression {
 	Ast_Scope *block_scope = 0;
 	String linkage_name;
 
-	bool is_template_function = false;
+	u8 flags = 0;
+
 	Ast_Scope *template_scope = 0;
 	Array<Ast_Function *> polymorphed_overloads;
 
@@ -182,7 +202,7 @@ struct Ast_Type_Alias : Ast_Expression {
 };
 
 struct Ast_Sizeof : Ast_Expression {
-	Ast_Type_Info *target_type;
+	Ast_Type_Info *target_type = 0;
 
 	Ast_Sizeof() {
 		type = Ast::SIZEOF;
@@ -190,7 +210,7 @@ struct Ast_Sizeof : Ast_Expression {
 };
 
 struct Ast_Unary : Ast_Expression {
-	Ast_Expression *target;
+	Ast_Expression *target = 0;
 	int op;
 	bool is_pre = false;
 
@@ -235,8 +255,8 @@ struct Ast_Literal : Ast_Expression {
 };
 
 struct Ast_Cast : Ast_Expression {
-	Ast_Expression *expression;	
-	Ast_Type_Info *target_type;
+	Ast_Expression *expression = 0;
+	Ast_Type_Info *target_type = 0;
 
 	Ast_Cast() {
 		type = Ast::CAST;
@@ -244,8 +264,8 @@ struct Ast_Cast : Ast_Expression {
 };
 
 struct Ast_Index : Ast_Expression {
-	Ast_Expression *expression;	
-	Ast_Expression *index;
+	Ast_Expression *expression = 0;	
+	Ast_Expression *index = 0;
 
 	Ast_Index() {
 		type = Ast::INDEX;
@@ -254,7 +274,7 @@ struct Ast_Index : Ast_Expression {
 
 struct Ast_Member : Ast_Expression {
 	Ast_Expression *left = 0;
-	Ast_Identifier *field;
+	Ast_Identifier *field = 0;
 
 	s64 field_index = -1;
 
@@ -298,6 +318,32 @@ struct Ast_While : Ast_Expression {
 
     Ast_While() {
     	type = Ast::WHILE;
+	}
+};
+
+struct Ast_For : Ast_Expression {
+	Ast_Declaration *iterator_decl = 0;
+	Ast_Declaration *iterator_index_decl = 0;
+
+	Ast_Expression *initial_iterator_expression = 0;
+	Ast_Expression *upper_range_expression = 0;
+
+	Ast_Scope *iterator_declaration_scope = 0;
+	Ast_Expression *body = 0;
+
+	Ast_For() {
+		type = Ast::FOR;
+	}
+};
+
+struct Ast_Continue : Ast_Expression {
+	Ast_Continue() {
+		type = Ast::CONTINUE;
+	}
+};
+struct Ast_Break : Ast_Expression {
+	Ast_Break() {
+		type = Ast::BREAK;
 	}
 };
 

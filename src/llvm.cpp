@@ -86,26 +86,20 @@ void LLVM_Converter::convert_scope(Ast_Scope *scope) {
 
 void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 	switch (expression->type) {
+		case Ast::SCOPE: {
+			convert_scope(static_cast<Ast_Scope *>(expression));
+		} break;
 		case Ast::STRUCT: {
 		} break;
 		case Ast::FUNCTION: {
 			auto fun = static_cast<Ast_Function *>(expression);
-			if (fun->is_template_function) {
+			if (fun->flags & FUNCTION_TEMPLATE) {
 				for (auto f : fun->polymorphed_overloads) {
 					convert_function(f);
 				}
 			} else {
 				convert_function(fun);
 			}
-		} break;
-		case Ast::DECLARATION: {
-			auto decl = static_cast<Ast_Declaration *>(expression);
-			auto var = irb->CreateAlloca(convert_type(decl->type_info));
-			if (decl->initializer) {
-				auto value = convert_expression(decl->initializer);
-				irb->CreateStore(value, var);
-			}
-			decl->llvm_reference = var;
 		} break;
 		case Ast::RETURN: {
 			Ast_Return *ret = static_cast<Ast_Return *>(expression);
@@ -160,6 +154,9 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
             BasicBlock *loop_header = BasicBlock::Create(*llvm_context, "", current_block->getParent());
             BasicBlock *loop_body = BasicBlock::Create(*llvm_context, "", current_block->getParent());
             
+			continue_blocks.add(loop_header);
+			break_blocks.add(next_block);
+
             irb->CreateBr(loop_header);
             
             irb->SetInsertPoint(loop_header);
@@ -172,7 +169,95 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
             if (!irb->GetInsertBlock()->getTerminator()) irb->CreateBr(loop_header);
             
             irb->SetInsertPoint(next_block);
+
+			continue_blocks.pop();
+			break_blocks.pop();
 		} break;
+		case Ast::FOR: {
+			Ast_For *_for = static_cast<Ast_For *>(expression);
+
+			auto it_decl = _for->iterator_decl;
+			auto decl_type = it_decl->type_info;
+
+			Value *it_index_alloca;
+			Value *it_alloca;
+
+			auto it_index_decl = _for->iterator_index_decl;
+			Ast_Type_Info *it_index_type = 0;
+			if (it_index_decl) {
+				convert_statement(it_index_decl);
+
+				it_index_type = it_index_decl->type_info;
+				it_index_alloca = it_index_decl->llvm_reference;
+
+				convert_statement(it_decl);
+				it_alloca = it_decl->llvm_reference;
+			} else {
+				convert_statement(it_decl);
+				it_alloca = it_decl->llvm_reference;
+
+				it_index_type = decl_type;
+				it_index_alloca = it_alloca;
+			}
+
+			auto current_block = irb->GetInsertBlock();
+
+			BasicBlock *next_block = BasicBlock::Create(*llvm_context, "", current_block->getParent());
+			BasicBlock *loop_header = BasicBlock::Create(*llvm_context, "", current_block->getParent());
+			BasicBlock *loop_body = BasicBlock::Create(*llvm_context, "", current_block->getParent());
+
+			irb->CreateBr(loop_header);
+
+			irb->SetInsertPoint(loop_header);
+			auto it_index = irb->CreateLoad(it_index_alloca);
+
+			auto upper = convert_expression(_for->upper_range_expression);
+			Value *cond = nullptr;
+			if (it_index_decl) {
+				if (it_index_type->is_signed) {
+					cond = irb->CreateICmpSLT(it_index, upper);
+				} else {
+					cond = irb->CreateICmpULT(it_index, upper);
+				}
+			} else {
+				if (it_index_type->is_signed) {
+					cond = irb->CreateICmpSLE(it_index, upper);
+				} else {
+					cond = irb->CreateICmpULE(it_index, upper);
+				}
+			}
+
+			irb->SetInsertPoint(loop_header);
+			irb->CreateCondBr(cond, loop_body, next_block);
+
+			irb->SetInsertPoint(loop_body);
+			if (it_index_decl) {
+				convert_statement(it_decl);
+			}
+
+			convert_statement(_for->body);
+
+			irb->CreateStore(irb->CreateAdd(it_index, ConstantInt::get(convert_type(it_index_type), 1)), it_index_alloca);
+			if (!irb->GetInsertBlock()->getTerminator()) irb->CreateBr(loop_header);
+
+			irb->SetInsertPoint(next_block);
+
+			break;
+		}
+		case Ast::CONTINUE:
+			if (continue_blocks.length > 0) {
+				irb->CreateBr(continue_blocks[continue_blocks.length - 1]);
+			} else {
+				compiler->report_error(expression, "'continue' is not in a loop");
+			}
+			break;
+		case Ast::BREAK:
+			if (break_blocks.length > 0) {
+				irb->CreateBr(break_blocks[break_blocks.length - 1]);
+			} else {
+				compiler->report_error(expression, "'break' is not in a loop");
+			}
+			break;
 		default: {
 			convert_expression(expression);
 		}
@@ -183,6 +268,18 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 	while(expression->substitution) expression = expression->substitution;
 
 	switch (expression->type) {
+		case Ast_Expression::DECLARATION: {
+			auto decl = static_cast<Ast_Declaration *>(expression);
+			auto var = irb->CreateAlloca(convert_type(decl->type_info));
+			if (decl->initializer) {
+				auto value = convert_expression(decl->initializer);
+				irb->CreateStore(value, var);
+				
+			}
+			decl->llvm_reference = var;
+
+			return 0;
+		} break;
 		case Ast_Expression::LITERAL: {
 			Ast_Literal *literal = static_cast<Ast_Literal *>(expression);
 			Type *ty = convert_type(expression->type_info);
@@ -601,6 +698,8 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 	auto fn = get_or_create_function(fun);
 	current_function = fn;
 
+	if (fun->flags & FUNCTION_EXTERNAL) return;
+
 	BasicBlock *entry_block = BasicBlock::Create(*llvm_context, "", fn);
 	irb->SetInsertPoint(entry_block);
 
@@ -643,9 +742,12 @@ void LLVM_Converter::emit_object_file() {
     
     legacy::PassManager pass;
 
-
+#if LLVM_VERSION_MAJOR==8
+	auto file_type = llvm::TargetMachine::CGFT_ObjectFile;
+#else
 	auto file_type = llvm::CGFT_ObjectFile;
-    
+#endif
+
     pass.add(createVerifierPass(false));
     if (target_machine->addPassesToEmitFile(pass, dest, nullptr, file_type)) {
         errs() << "TargetMachine can't emit a file of this type";
@@ -672,7 +774,7 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
         
         Type *return_type = convert_type(function->return_type);
         
-        auto fn_type = FunctionType::get(return_type, ArrayRef<Type *>(arg_types.data, arg_types.length), false);
+        auto fn_type = FunctionType::get(return_type, ArrayRef<Type *>(arg_types.data, arg_types.length), function->flags & FUNCTION_VARARG);
         
 		fn = Function::Create(
 				static_cast<FunctionType *>(fn_type),

@@ -36,6 +36,8 @@ Compiler::Compiler() {
     atom_data = make_atom(to_string("data"));
     atom_length = make_atom(to_string("length"));
     atom_capacity = make_atom(to_string("capacity"));
+	atom_it = make_atom(to_string("it"));
+	atom_it_index = make_atom(to_string("it_index"));
 }
 
 void Compiler::run(String entry_file) {
@@ -49,7 +51,7 @@ void Compiler::run(String entry_file) {
     if (errors_reported) return;
 
 	llvm_converter->emit_llvm_ir();
-	// llvm_converter->emit_object_file();
+	llvm_converter->emit_object_file();
 }
 
 void Compiler::parse_file(String file_path) {
@@ -101,27 +103,27 @@ Ast_Expression *find_declaration_by_name(Atom *name, Ast_Scope *scope) {
 			switch (decl->type) {
 				case Ast::STRUCT: {
 					auto strct = static_cast<Ast_Struct *>(decl);
-					if (strct->identifier->atom->hash == name->hash)
+					if (strct->identifier->atom == name)
 						return decl;
 				} break;
 				case Ast::TYPE_ALIAS: {
 					auto ta = static_cast<Ast_Type_Alias *>(decl);
-					if (ta->identifier->atom->hash == name->hash)
+					if (ta->identifier->atom == name)
 						return decl;
 				} break;
 				case Ast::DECLARATION: {
 					auto var_decl = static_cast<Ast_Declaration *>(decl);
-					if (var_decl->identifier->atom->hash == name->hash)
+					if (var_decl->identifier->atom == name)
 						return decl;
 				} break;
 				case Ast::FUNCTION: {
 					auto fun = static_cast<Ast_Function *>(decl);
-					if (fun->identifier->atom->hash == name->hash)
+					if (fun->identifier->atom == name)
 						return decl;
 				} break;
 				case Ast::ENUM: {
 					auto e = static_cast<Ast_Enum *>(decl);
-					if (e->identifier->atom->hash == name->hash)
+					if (e->identifier->atom == name)
 						return decl;
 				} break;
 			}
@@ -203,6 +205,9 @@ void Compiler::report_error(Source_Location location, const char *fmt, va_list a
 	puts("\n");
 
 	errors_reported++;
+
+	/* TODO: Remove at some time */
+	exit(1);
 }
 
 void Compiler::report_error(Token *token, const char *fmt, ...) {
@@ -224,7 +229,7 @@ void Compiler::report_error(Ast *ast, const char *fmt, ...) {
 int main(int argc, char *argv[]) {
 	Compiler compiler;
 
-	compiler.run(to_string("/Users/niko/Desktop/dev/aleph/examples/example.alf"));
+	compiler.run(to_string("examples/example.alf"));
 
 	return 0;
 }

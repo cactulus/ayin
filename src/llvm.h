@@ -10,6 +10,8 @@ namespace llvm {
 	class Type;
 	class Function;
 
+	class BasicBlock;
+
 	class TargetMachine;
 	
     class ConstantFolder;
@@ -32,6 +34,9 @@ struct LLVM_Converter {
 	llvm::IRBuilder<llvm::ConstantFolder, llvm::IRBuilderDefaultInserter> *irb;
 
 	llvm::Function *current_function = 0;
+
+	Array<llvm::BasicBlock *> continue_blocks;
+	Array<llvm::BasicBlock *> break_blocks;
 
 	llvm::Type *type_void;
 	llvm::Type *type_i1;

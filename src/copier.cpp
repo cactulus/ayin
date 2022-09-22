@@ -192,6 +192,40 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 
 			return _new;
 		}
+		case Ast::CONTINUE: {
+			auto old = static_cast<Ast_Continue *>(ast);
+			auto _new = COPY_NEW(Ast_Continue);
+
+			return _new;
+		}
+		case Ast::BREAK: {
+			auto old = static_cast<Ast_Break *>(ast);
+			auto _new = COPY_NEW(Ast_Break);
+
+			return _new;
+		}
+		case Ast::DIRECTIVE: {
+			auto old = static_cast<Ast_Directive *>(ast);
+			auto _new = COPY_NEW(Ast_Directive);
+
+			COPY_C(identifier);
+
+			return _new;
+		}
+		case Ast::FOR: {
+			auto old = static_cast<Ast_For *>(ast);
+			auto _new = COPY_NEW(Ast_For);
+
+			_new->iterator_declaration_scope = push_scope(old->iterator_declaration_scope);
+
+			COPY_C(iterator_decl);
+			COPY_C(iterator_index_decl);
+			COPY_C(initial_iterator_expression);
+			COPY_C(upper_range_expression);
+
+			pop_scope();
+			return _new;
+		}
 	}
 
 	assert(0);
@@ -203,7 +237,6 @@ Ast_Function *Copier::copy_function(Ast_Function *old) {
 
 	COPY_C(identifier);
 
-	COPY_F(is_template_function);
 	if (old->template_scope)
 		_new->template_scope = push_scope(old->template_scope);
 
@@ -214,6 +247,7 @@ Ast_Function *Copier::copy_function(Ast_Function *old) {
 	_new->block_scope = push_scope(old->block_scope);
 
 	COPY_F(linkage_name);
+	COPY_F(flags);
 
 	/* TODO: check if i have to copy polymorphed_overloads */
 

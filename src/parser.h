@@ -24,10 +24,11 @@ struct Parser {
 	Ast_Struct *parse_struct_declaration();
 	Ast_Enum *parse_enum_declaration();
 	Ast_Type_Alias *parse_type_alias();
-	Ast_Function *parse_function_declaration();
+	Ast_Function *parse_function_declaration(bool is_extern);
 	Ast_Declaration *parse_variable_declaration(bool expect_semicolon=false);
+	void parse_variable_declaration_base(Ast_Declaration *var_decl);
 
-	Ast_Expression *parse_declaration_or_statement();
+	Ast_Expression *parse_declaration_or_statement(bool expect_semicolon=true);
 	Ast_Expression *parse_expression(int precedence = 1);
 
 	Ast_Expression *parse_binary(int precedence);

@@ -38,6 +38,8 @@ struct Compiler {
 	Atom *atom_data;
 	Atom *atom_length;
 	Atom *atom_capacity;
+	Atom *atom_it;
+	Atom *atom_it_index;
 
 	Compiler();
 

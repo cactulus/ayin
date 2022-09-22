@@ -63,8 +63,17 @@ Ast_Expression *Parser::parse_global() {
 		return parse_type_alias();
 	}
 	
+	if (expect_eat(Token::EXTERN)) {
+		if (expect_eat(Token::FUNC)) {
+			return parse_function_declaration(true);
+		} else {
+			compiler->report_error(peek(), "Expected 'func' after 'extern' keyword");
+			return 0;
+		}
+	}
+
 	if (expect_eat(Token::FUNC)) {
-		return parse_function_declaration();
+		return parse_function_declaration(false);
 	}
 
 	Ast_Declaration *var_decl = parse_variable_declaration(true);
@@ -95,6 +104,10 @@ Ast_Struct *Parser::parse_struct_declaration() {
 
 	while (!expect_eat('}')) {
 		Ast_Declaration *decl = parse_variable_declaration();
+		if (!decl) {
+			compiler->report_error(peek(), "Expected variable name");
+			return 0;
+		}
 
 		s->members.add(decl);
 		struct_type->struct_members.add(decl->type_info);
@@ -151,19 +164,23 @@ Ast_Type_Alias *Parser::parse_type_alias() {
 	return ta;
 }
 
-Ast_Function *Parser::parse_function_declaration() {
+Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 	auto fn = AST_NEW(Ast_Function);
 
 	fn->identifier = parse_identifier();
+	if (is_extern) {
+		fn->flags |= FUNCTION_EXTERNAL;
+	}
+	
 	if (!fn->identifier) {
 		compiler->report_error(fn->identifier, "Expected identifier for function name");
 	}
 
 	if (expect_eat('<')) {
-
 		push_scope();
+
 		fn->template_scope = current_scope;
-		fn->is_template_function = true;
+		fn->flags |= FUNCTION_TEMPLATE;
 
 		while (!expect_eat('>')) {
 			Ast_Type_Alias *alias = AST_NEW(Ast_Type_Alias);
@@ -187,6 +204,10 @@ Ast_Function *Parser::parse_function_declaration() {
 	fn->parameter_scope = current_scope;
 	while (!expect_eat(')')) {
 		Ast_Declaration *par_decl = parse_variable_declaration();
+		if (!par_decl) {
+			compiler->report_error(peek(), "Expected variable name");
+			return fn;
+		}
 
 		if (par_decl->initializer) {
 			compiler->report_error(par_decl, "Can't initialize parameter");
@@ -199,28 +220,37 @@ Ast_Function *Parser::parse_function_declaration() {
 				compiler->report_error(peek(), "Expected ',' after parameter");
 			}
 		}
+
+		if (expect_eat(Token::DOT_DOT_DOT)) {
+			fn->flags |= FUNCTION_VARARG;
+		}
 	}
 
-	if (expect_eat('{')) {
+	if (expect_eat('{') || expect_eat(';')) {
 		fn->return_type = compiler->type_void;
 	} else {
 		fn->return_type = parse_type_specifier();
 
-		if (!expect_eat('{')) {
+		if (!expect_eat('{') && !is_extern) {
 			compiler->report_error(peek(), "Expected '{' after return type specifier");
+		}
+
+		if (!expect_eat(';') && is_extern) {
+			compiler->report_error(peek(), "Expected ';' after return type specifier");
 		}
 	}
 
-	push_scope();
-	fn->block_scope = current_scope;
+	if (!is_extern) {
+		push_scope();
+		fn->block_scope = current_scope;
 
-	while (!expect_eat('}')) {
-		Ast_Expression *statement_or_declaration = parse_declaration_or_statement();
-		if (!statement_or_declaration) {
-			return fn;
-		}
+		while (!expect_eat('}')) {
+			Ast_Expression *statement_or_declaration = parse_declaration_or_statement();
+			if (!statement_or_declaration) {
+				return fn;
+			}
 
-		switch (statement_or_declaration->type) {
+			switch (statement_or_declaration->type) {
 			case Ast::DECLARATION:
 			case Ast::STRUCT:
 			case Ast::ENUM:
@@ -232,7 +262,10 @@ Ast_Function *Parser::parse_function_declaration() {
 				current_scope->statements.add(statement_or_declaration);
 				break;
 
+			}
 		}
+	} else {
+		fn->block_scope = 0;
 	}
 
 	if (fn->template_scope)
@@ -241,7 +274,9 @@ Ast_Function *Parser::parse_function_declaration() {
 	if (fn->parameter_scope)
 		pop_scope();
 
-	pop_scope();
+	if (!is_extern) {
+		pop_scope();
+	}
 
 	return fn;
 }
@@ -252,20 +287,11 @@ Ast_Declaration *Parser::parse_variable_declaration(bool expect_semicolon) {
 	var_decl->identifier = parse_identifier();
 
 	if (!var_decl->identifier) {
-		compiler->report_error(peek(), "Expected variable name");
 		return 0;
 	}
 
 	if (expect_eat(':')) {
-		if (expect_eat('=')) {
-			var_decl->initializer = parse_expression();
-		} else {
-			var_decl->type_info = parse_type_specifier();
-
-			if (expect_eat('=')) {
-				var_decl->initializer = parse_expression();
-			}
-		}
+		parse_variable_declaration_base(var_decl);
 	} else {
 		compiler->report_error(peek(), "Expected ':' after variable name");
 		return 0;
@@ -280,17 +306,25 @@ Ast_Declaration *Parser::parse_variable_declaration(bool expect_semicolon) {
 	return var_decl;
 }
 
-Ast_Expression *Parser::parse_declaration_or_statement() {
-	if (expect(Token::ATOM) && expect(':', 1)) {
-		return parse_variable_declaration(true);
-	}
+void Parser::parse_variable_declaration_base(Ast_Declaration *var_decl) {
+	if (expect_eat('=')) {
+		var_decl->initializer = parse_expression();
+	} else {
+		var_decl->type_info = parse_type_specifier();
 
+		if (expect_eat('=')) {
+			var_decl->initializer = parse_expression();
+		}
+	}
+}
+
+Ast_Expression *Parser::parse_declaration_or_statement(bool expect_semicolon) {
 	if (expect(Token::RETURN)) {
 		Ast_Return *ret = AST_NEW(Ast_Return);
 		next();
 		if (!expect_eat(';')) {
 			ret->return_value = parse_expression();
-			if (!expect_eat(';')) {
+			if (!expect_eat(';') && expect_semicolon) {
 				compiler->report_error(peek(), "expected ';' after return value");
 			}
 		}
@@ -306,7 +340,6 @@ Ast_Expression *Parser::parse_declaration_or_statement() {
         if (compiler->errors_reported) return _if;
         
         if (!_if->condition) {
-            // @Cleanup move to sema?
             compiler->report_error(_if, "'if' must be followed by an expression.\n");
             return _if;
         }
@@ -338,11 +371,36 @@ Ast_Expression *Parser::parse_declaration_or_statement() {
 		return _while;
 	}
 
+	if (expect(Token::FOR)) {
+		Ast_For *_for = AST_NEW(Ast_For);
+		next();
+
+		_for->initial_iterator_expression = parse_expression();
+
+		auto token = peek();
+		if (expect_eat(Token::DOT_DOT)) {
+			if (!_for->initial_iterator_expression) {
+				compiler->report_error(token, ".. operator must be preceeded by an expression.\n");
+				return _for;
+			}
+
+			_for->upper_range_expression = parse_expression();
+		}
+
+		push_scope();
+		_for->iterator_declaration_scope = current_scope;
+
+		_for->body = parse_declaration_or_statement();
+
+		pop_scope();
+		return _for;
+	}
+
 	if (expect_eat('{')) {
 		push_scope();
 		Ast_Scope *scope = current_scope;
 
-		while (expect_eat('}')) {
+		while (!expect_eat('}')) {
 			Ast_Expression *statement_or_declaration = parse_declaration_or_statement();
 			if (!statement_or_declaration) {
 				return scope;
@@ -367,8 +425,44 @@ Ast_Expression *Parser::parse_declaration_or_statement() {
 		return scope;
 	}
 
+	if (expect(Token::CONTINUE)) {
+		auto _continue = AST_NEW(Ast_Continue);
+		next();
+		
+		if (!expect_eat(';') && expect_semicolon) {
+			compiler->report_error(peek(), "expected ';' after 'continue'");
+		}
+			
+		return _continue;
+	}
+
+	if (expect(Token::BREAK)) {
+		auto _continue = AST_NEW(Ast_Break);
+		next();
+
+		if (!expect_eat(';') && expect_semicolon) {
+			compiler->report_error(peek(), "expected ';' after 'break'");
+		}
+
+		return _continue;
+	}
+
+	if (expect_eat('#')) {
+		Ast_Directive *directive = AST_NEW(Ast_Directive);
+
+		auto id = parse_identifier();
+		if (!id) {
+			compiler->report_error(directive, "Expected identifier after '#'");
+			return 0;
+		}
+
+		directive->identifier = id;
+
+		return directive;
+	}
+	 
 	Ast_Expression *expr = parse_expression();
-    if (!expect_eat(';')) {
+    if (!expect_eat(';') && expect_semicolon) {
         compiler->report_error(peek(), "expected ';' after expression");
     }
     return expr;
@@ -545,6 +639,16 @@ Ast_Expression *Parser::parse_primary() {
 		id->scope = current_scope;
 
 		next();
+
+		if (expect_eat(':')) {
+			Ast_Declaration *decl = AST_NEW(Ast_Declaration);
+			decl->location = id->location;
+			decl->identifier = id;
+
+			parse_variable_declaration_base(decl);
+
+			return decl;
+		}
 
 		if (expect_eat('(')) {
 			Ast_Call *call = AST_NEW(Ast_Call);
