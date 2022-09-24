@@ -5,6 +5,10 @@
 #include "parser.h"
 #include "llvm.h"
 
+static String get_executable_path();
+
+const int MAX_PATH = 512;
+
 Compiler::Compiler() {
     llvm_converter = new LLVM_Converter(this);
 	copier = new Copier(this);
@@ -32,17 +36,64 @@ Compiler::Compiler() {
     type_f32 = make_float_type(4);
     type_f64 = make_float_type(8);
 
+	type_string_data = make_pointer_type(type_u8);
+
+	type_string = new Ast_Type_Info();
+	type_string->type = Ast_Type_Info::STRING;
+
     atom_main = make_atom(to_string("main"));
     atom_data = make_atom(to_string("data"));
     atom_length = make_atom(to_string("length"));
     atom_capacity = make_atom(to_string("capacity"));
 	atom_it = make_atom(to_string("it"));
 	atom_it_index = make_atom(to_string("it_index"));
+
+	String path = get_executable_path();
+	String exe_dir_path = basepath(path);
+	String ayin_path;
+
+	while (exe_dir_path.length) {
+		String name = basename(exe_dir_path);
+
+		if (name == to_string("ayin")) {
+			ayin_path = exe_dir_path;
+			break;
+		}
+
+		exe_dir_path = basepath(exe_dir_path);
+	}
+	char stdlib_path_str[MAX_PATH];
+	snprintf(stdlib_path_str, MAX_PATH, "%.*sstdlib", ayin_path.length, ayin_path.data);
+
+	stdlib_path = copy_string(to_string(stdlib_path_str));
 }
 
 void Compiler::run(String entry_file) {
 	parse_file(entry_file);
     if (errors_reported) return;
+
+	while (directives.length > 0) {
+		Ast_Directive *directive = directives[0];
+
+		switch (directive->directive_type) {
+		case Ast_Directive::INCLUDE:
+			parse_file(directive->file);
+			directives.ordered_remove(0);
+			break;
+		case Ast_Directive::USE:
+			char stdlib_path_str[MAX_PATH];
+			snprintf(stdlib_path_str,	MAX_PATH,
+				"%.*s/%.*s.ay", stdlib_path.length,
+				stdlib_path.data, directive->file.length,
+				directive->file.data);
+
+			parse_file(to_string(stdlib_path_str));
+			directives.ordered_remove(0);
+			break;
+		case Ast_Directive::IF:
+			break;
+		}
+	}
 
 	typer->type_check_scope(global_scope);
     if (errors_reported) return;
@@ -55,8 +106,17 @@ void Compiler::run(String entry_file) {
 }
 
 void Compiler::parse_file(String file_path) {
+	for (auto included_file : included_files) {
+		if (included_file == file_path) {
+			return;
+		}
+	}
+
 	String content;
-	read_entire_file(file_path, &content);
+	if (!read_entire_file(file_path, &content)) {
+		printf("Failed to read file '%.*s'", file_path.length, file_path.data);
+		std::exit(1);
+	}
 
 	Atom *file_atom = new Atom();
 
@@ -157,7 +217,7 @@ Atom *Compiler::make_atom(String name) {
 }
 
 void Compiler::report_error(Source_Location location, const char *fmt, va_list args) {
-	printf("aleph: \"%.*s\"(%lld:%lld): ", location.file.length, location.file.data, location.line + 1, location.col + 1);
+	printf("ayin: \"%.*s\"(%lld:%lld): ", location.file.length, location.file.data, location.line + 1, location.col + 1);
 	vprintf(fmt, args);
     printf("\n");
 
@@ -226,10 +286,48 @@ void Compiler::report_error(Ast *ast, const char *fmt, ...) {
     va_end(args);
 }
 
+#ifdef _WIN32
+
+#include <windows.h>
+#include <shlwapi.h>
+
+#pragma comment(lib, "shlwapi.lib") 
+
+String get_executable_path() {
+	const DWORD BUFFER_SIZE = 512;
+	char buf[BUFFER_SIZE];
+
+	auto module = GetModuleHandleA(nullptr);
+	GetModuleFileNameA(module, buf, BUFFER_SIZE);
+
+	convert_to_forward_slashes(buf);
+	return copy_string(to_string(buf));
+}
+#endif
+
+#ifdef MACOSX
+
+String get_executable_path() {
+	const u32 BUFFER_SIZE = 512;
+	char buf[BUFFER_SIZE];
+
+	u32 bufsize = BUFFER_SIZE;
+	auto result = _NSGetExecutablePath(buf, &bufsize);
+	if (result != 0) return "";
+
+	return copy_string(to_string(buf));
+}
+#endif
+
+#ifdef UNIX
+#include <sys/stat.h>
+
+#endif
+
 int main(int argc, char *argv[]) {
 	Compiler compiler;
 
-	compiler.run(to_string("examples/example.alf"));
+	compiler.run(to_string("examples/example.ay"));
 
 	return 0;
 }

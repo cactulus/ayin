@@ -81,6 +81,7 @@ struct Token {
 		F64,
 		BOOL,
 		VOID,
+		STR,
 	};
 
 	Type type;

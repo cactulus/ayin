@@ -143,7 +143,7 @@ void Typer::type_check_statement(Ast_Expression *stmt) {
 				bool supports_iteration_interface = type_is_array(init_type);
 
 				if (!supports_iteration_interface) {
-					compiler->report_error(_for->initial_iterator_expression, "Type of expression in 'for' condition is not iterable. Must be an integer range or an array");
+					compiler->report_error(_for->initial_iterator_expression, "Type of expression in 'for' condition is not iterable. Must be an integer range, a string or an array");
 					return;
 				}
 			}
@@ -220,8 +220,11 @@ void Typer::type_check_statement(Ast_Expression *stmt) {
 
 void Typer::type_check_variable_declaration(Ast_Declaration *decl) {
 	if (decl->type_info) {
-		decl->type_info = resolve_type_info(decl->type_info);
-		if (!decl->type_info) {
+		Ast_Type_Info *new_type = resolve_type_info(decl->type_info);
+		
+		if (new_type) {
+			decl->type_info = new_type;
+		} else {
 			compiler->report_error(decl->type_info->unresolved_name,
 					"Can't resolve symbol '%s'",
 					decl->type_info->unresolved_name->atom->id.data);
@@ -246,6 +249,7 @@ void Typer::type_check_variable_declaration(Ast_Declaration *decl) {
 }
 
 void Typer::type_check_function(Ast_Function *function) {
+	Ast_Function *old_current_function = current_function;
 	current_function = function;
 
 	for (auto par : function->parameter_scope->declarations) {
@@ -265,6 +269,8 @@ void Typer::type_check_function(Ast_Function *function) {
 	if (!(function->flags & FUNCTION_EXTERNAL)) {
 		type_check_scope(function->block_scope);
 	}
+
+	current_function = old_current_function;
 }
 
 void Typer::infer_type(Ast_Expression *expression) {
@@ -287,6 +293,9 @@ void Typer::infer_type(Ast_Expression *expression) {
 					break;
 				case Ast_Literal::FLOAT:
 					lit->type_info = compiler->type_f32;
+					break;
+				case Ast_Literal::STRING:
+					lit->type_info = compiler->type_string;
 					break;
 			}
 		} break;
@@ -320,20 +329,31 @@ void Typer::infer_type(Ast_Expression *expression) {
 			}
 
 			Ast_Function *function = static_cast<Ast_Function *>(decl);
-			Ast_Type_Info *function_type = function->type_info;
 
 			if (function->flags & FUNCTION_TEMPLATE) {
 				function = get_polymorph_function(call, function);
 				call->type_info = function->return_type;
 				call->resolved_function = function;
 			} else {
-				call->type_info = function_type->return_type;
+				call->type_info = function->return_type;
 				call->resolved_function = function;
 
-				for (int i = 0; i < function_type->parameters.length; ++i) {
-					if (i >= call->arguments.length) {
-						compiler->report_error(call->identifier, "Arguments count does not match parameter count");
-						return;
+				auto par_count = function->parameter_scope->declarations.length;
+
+				if (par_count > call->arguments.length) {
+					compiler->report_error(call->identifier, "Arguments count does not match parameter count");
+					return;
+				}
+
+				for (int i = 0; i < call->arguments.length; ++i) {
+					if (i >= par_count) {
+						if (function->flags & FUNCTION_VARARG) {
+							infer_type(call->arguments[i]);
+							continue;
+						} else {
+							compiler->report_error(call->identifier, "Arguments count does not match parameter count");
+							return;
+						} 
 					}
 
 					infer_type(call->arguments[i]);
@@ -479,8 +499,10 @@ void Typer::infer_type(Ast_Expression *expression) {
 			infer_type(index->expression);
 			infer_type(index->index);
 
-			if (!type_is_array(index->expression->type_info)) {
-				compiler->report_error(index->index, "Cannot index dereference non-array type");
+			auto expr_type = index->expression->type_info;
+
+			if (!type_is_array(expr_type) && !type_is_string(expr_type) && !type_is_pointer(expr_type)) {
+				compiler->report_error(index->index, "Cannot index dereference type that is not a string, array or pointer");
 				break;
 			}
 
@@ -489,7 +511,11 @@ void Typer::infer_type(Ast_Expression *expression) {
 				break;
 			}
 
-			index->type_info = index->expression->type_info->element_type;
+			if (type_is_string(expr_type)) {
+				index->type_info = compiler->type_u8;
+			} else {
+				index->type_info = expr_type->element_type;
+			}
 		} break;
 		case Ast_Expression::MEMBER: {
 			Ast_Member *member = static_cast<Ast_Member *>(expression);
@@ -574,12 +600,51 @@ void Typer::infer_type(Ast_Expression *expression) {
                     String name = left_type->struct_decl->identifier->atom->id;
                     compiler->report_error(member, "No member '%.*s' in struct %.*s.\n", field_name.length, field_name.data, name.length, name.data);
                 }
+			} else if (type_is_string(left_type)) {
+				if (field_atom == compiler->atom_data) {
+					member->field_index= 0;
+					member->type_info = compiler->type_string_data;
+				} else if (field_atom == compiler->atom_length) {
+					member->field_index = 1;
+					member->type_info = compiler->type_s64;
+				} else {
+					String field_name = field_atom->id;
+					compiler->report_error(member, "No member '%.*s' in type string.\n", field_name.length, field_name.data);
+				}
+			} else {
+				compiler->report_error(member, "Tried to access type that is not a string, array or struct");
+				return;
 			}
 		} break;
 	}
 }
 
 Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
+	if (type_is_pointer(type_info) || type_is_array(type_info)) {
+		Ast_Type_Info *current = type_info;
+
+		while (type_is_pointer(current) || type_is_array(current)) {
+			if (current->element_type->type != Ast_Type_Info::UNRESOLVED) {
+				current = current->element_type;
+				continue;
+			}
+
+			Ast_Type_Info *new_type = resolve_type_info(current->element_type);
+
+			if (new_type) {
+				current->element_type = new_type;
+			} else {
+				auto name = current->element_type->unresolved_name;
+				compiler->report_error(name,
+					"Can't resolve symbol '%.*s'",
+					name->atom->id.length, name->atom->id.data);
+				return type_info;
+			}
+		}
+
+		return type_info;
+	}
+
 	if (type_info->type != Ast_Type_Info::UNRESOLVED) return type_info;
 
 	Ast_Expression *decl = find_declaration_by_id(type_info->unresolved_name);
@@ -758,6 +823,16 @@ bool Typer::can_fill_polymorph(Ast_Type_Info *par_type, Ast_Type_Info *arg_type)
         }
     }
 
+	if (par_type->type == Ast_Type_Info::ARRAY) {
+		if (arg_type->type != Ast_Type_Info::ARRAY) return false;
+
+		bool success = can_fill_polymorph(par_type->element_type, arg_type->element_type);
+		if (compiler->errors_reported) return false;
+
+		return success;
+		
+	}
+
     return false;
 }
 
@@ -848,6 +923,9 @@ void Typer::mangle_type(String_Builder *builder, Ast_Type_Info *type) {
 		case Ast_Type_Info::FLOAT: {
 			builder->putchar('f');
 			builder->print("%d", type->size * 8);
+		} break;
+		case Ast_Type_Info::STRING: {
+			builder->putchar('s');
 		} break;
 		case Ast_Type_Info::STRUCT: {
 			builder->putchar('S');

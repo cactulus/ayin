@@ -1,9 +1,9 @@
-workspace "aleph"
+workspace "ayin"
 	configurations { "Debug", "Release", "Dist" }
 	filter { "platforms:*32" } architecture "x86"
   	filter { "platforms:*64" } architecture "x64"
 
-project "aleph"
+project "ayin"
 	kind "ConsoleApp"
 	language "C++"
 	targetdir "bin/%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
@@ -30,13 +30,13 @@ project "aleph"
 		buildoptions { "-Wno-writable-strings -Wno-switch" }
 
 	filter "configurations:Debug"
-		defines { "ALEPH_DEBUG" }
+		defines { "AYIN_DEBUG" }
 		symbols "On"
 
 	filter "configurations:Release"
-		defines { "ALEPH_RELEASE" }
+		defines { "AYIN_RELEASE" }
 		optimize "On"
 
 	filter "configurations:Dist"
-		defines { "ALEPH_DIST" }
+		defines { "AYIN_DIST" }
 		optimize "On"

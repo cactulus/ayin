@@ -77,7 +77,18 @@ struct Ast_Expression : Ast {
 };
 
 struct Ast_Directive : Ast_Expression {
-	Ast_Identifier *identifier = 0;
+
+	enum Directive_Type : u32 {
+		INCLUDE,
+		USE,
+		IF,
+	};
+
+	Directive_Type directive_type;
+	Ast_Expression *condition = 0;
+	Ast_Expression *then_stmt = 0;
+	Ast_Expression *else_stmt = 0;
+	String file;
 
 	Ast_Directive() {
 		type = Ast::DIRECTIVE;
@@ -110,6 +121,7 @@ struct Ast_Type_Info {
 		BOOL,
 		INT,
 		FLOAT,
+		STRING,
 
 		TYPE,
 	};
@@ -242,12 +254,14 @@ struct Ast_Literal : Ast_Expression {
 	enum Literal_Type {
 		BOOL,
 		FLOAT,
-		INT
+		INT,
+		STRING
 	};
 
 	Literal_Type literal_type;
 	s64 int_value;
 	f64 float_value;
+	String string_value;
 
 	Ast_Literal() {
 		type = Ast::LITERAL;
@@ -369,6 +383,10 @@ inline bool type_is_float(Ast_Type_Info *type_info) {
 
 inline bool type_is_pointer(Ast_Type_Info *type_info) {
 	return type_info->type == Ast_Type_Info::POINTER;
+}
+
+inline bool type_is_string(Ast_Type_Info *type_info) {
+	return type_info->type == Ast_Type_Info::STRING;
 }
 
 inline bool type_is_primitive(Ast_Type_Info *type_info) {

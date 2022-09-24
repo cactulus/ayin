@@ -28,6 +28,8 @@ struct Parser {
 	Ast_Declaration *parse_variable_declaration(bool expect_semicolon=false);
 	void parse_variable_declaration_base(Ast_Declaration *var_decl);
 
+	Ast_Directive *parse_directive();
+
 	Ast_Expression *parse_declaration_or_statement(bool expect_semicolon=true);
 	Ast_Expression *parse_expression(int precedence = 1);
 

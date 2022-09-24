@@ -8,6 +8,7 @@ namespace llvm {
 
 	class Value;
 	class Type;
+	class StructType;
 	class Function;
 
 	class BasicBlock;
@@ -46,6 +47,7 @@ struct LLVM_Converter {
 	llvm::Type *type_i64;
 	llvm::Type *type_f32;
 	llvm::Type *type_f64;
+	llvm::StructType *type_string;
 
 	LLVM_Converter(Compiler *compiler);
 

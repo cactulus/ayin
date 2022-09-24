@@ -61,7 +61,7 @@ LLVM_Converter::LLVM_Converter(Compiler *compiler) {
     target_machine = target->createTargetMachine(target_triple, cpu, features, opt, rm);
     
     llvm_context = new LLVMContext();
-    llvm_module = new Module("Aleph Module", *llvm_context);
+    llvm_module = new Module("Ayin", *llvm_context);
     irb = new IRBuilder<ConstantFolder, IRBuilderDefaultInserter>(*llvm_context);
 
     type_void = Type::getVoidTy(*llvm_context);
@@ -71,7 +71,8 @@ LLVM_Converter::LLVM_Converter(Compiler *compiler) {
     type_i32 = Type::getInt32Ty(*llvm_context);
     type_i64 = Type::getInt64Ty(*llvm_context);
     type_f32 = Type::getFloatTy(*llvm_context);
-    type_f64 = Type::getDoubleTy(*llvm_context);
+	type_f64 = Type::getDoubleTy(*llvm_context);
+	type_string = StructType::create(*llvm_context, {type_i8->getPointerTo(), type_i64}, "string", true);
 }
 
 void LLVM_Converter::convert_scope(Ast_Scope *scope) {
@@ -89,6 +90,7 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 		case Ast::SCOPE: {
 			convert_scope(static_cast<Ast_Scope *>(expression));
 		} break;
+		case Ast::DIRECTIVE:
 		case Ast::STRUCT: {
 		} break;
 		case Ast::FUNCTION: {
@@ -292,6 +294,16 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				case Ast_Literal::FLOAT: {
 					return ConstantFP::get(ty, literal->float_value);
 				}
+				case Ast_Literal::STRING: {
+					if (literal->string_value.length == 0 || literal->string_value.data == 0) {
+						return Constant::getNullValue(type_string);
+					}
+
+					Constant *data = irb->CreateGlobalStringPtr(STR_REF(literal->string_value));
+					Constant *length = ConstantInt::get(type_i64, literal->string_value.length);
+
+					return ConstantStruct::get(type_string, { data, length });
+				}
 				default:
 					assert(0 && "LLVM emission for literal type not implemented");
 					return 0;
@@ -384,8 +396,9 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 					return convert_expression(unary->target, true);
 				}
 				case '*': {
-					auto target = convert_expression(unary->target);
-    				return load(target);
+					auto value = convert_expression(unary->target, is_lvalue);
+
+					return load(value);
 				}
 				case '!': {
 					auto target = convert_expression(unary->target);
@@ -450,7 +463,14 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
                 
                 if (!is_lvalue) return load(element);
                 return element;
-            }
+			} else if (type_is_string(type)) {
+				array = irb->CreateGEP(array, { ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, 0) });
+				array = irb->CreateLoad(array);
+				auto element = irb->CreateGEP(array, index);
+
+				if (!is_lvalue) return irb->CreateLoad(element);
+				return element;
+			}
             
             auto element = gep(array, {ConstantInt::get(type_i32, 0), index});
             
@@ -649,6 +669,10 @@ Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
 		return type_i1;
 	}
 
+	if (type_info->type == Ast_Type_Info::STRING) {
+		return type_string;
+	}
+
 	if (type_info->type == Ast_Type_Info::STRUCT) {
 		Array<Type *> member_types;
         
@@ -715,6 +739,15 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 	}
 	
 	convert_scope(fun->block_scope);
+
+	if (!irb->GetInsertBlock()->getTerminator()) {
+		if (fun->return_type->type == Ast_Type_Info::VOID) {
+			irb->CreateRetVoid();
+		} else {
+			compiler->report_error(fun, "Non-void function needs a return");
+			return;
+		}
+	}
 }
 
 void LLVM_Converter::emit_llvm_ir() {
@@ -755,7 +788,7 @@ void LLVM_Converter::emit_object_file() {
     }
     
     pass.run(*llvm_module);
-    dest.flush();
+	dest.flush();
 }
 
 Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {

@@ -1,0 +1,1 @@
+extern func printf(fmt: *u8, ...) s32;

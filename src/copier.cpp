@@ -1,4 +1,4 @@
-#include "compiler.h"
+ #include "compiler.h"
 #include "copier.h"
 #include "ast.h"
 
@@ -82,6 +82,7 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 			COPY_F(literal_type);
 			COPY_F(int_value);
 			COPY_F(float_value);
+			COPY_F(string_value);
 
 			return _new;
 		}
@@ -208,7 +209,11 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 			auto old = static_cast<Ast_Directive *>(ast);
 			auto _new = COPY_NEW(Ast_Directive);
 
-			COPY_C(identifier);
+			COPY_F(directive_type);
+			COPY_C(condition);
+			COPY_C(then_stmt);
+			COPY_C(else_stmt);
+			COPY_F(file);
 
 			return _new;
 		}

@@ -76,6 +76,10 @@ Ast_Expression *Parser::parse_global() {
 		return parse_function_declaration(false);
 	}
 
+	if (expect_eat('#')) {
+		return parse_directive();
+	}
+
 	Ast_Declaration *var_decl = parse_variable_declaration(true);
 	if (var_decl) {
 		return var_decl;
@@ -318,6 +322,50 @@ void Parser::parse_variable_declaration_base(Ast_Declaration *var_decl) {
 	}
 }
 
+Ast_Directive *Parser::parse_directive() {
+	Ast_Directive *directive = AST_NEW(Ast_Directive);
+
+	auto id = next();
+
+	if (id->type == Token::ATOM) {
+		if (id->lexeme == to_string("use")) {
+			directive->directive_type = Ast_Directive::USE;
+		} else if (id->lexeme == to_string("include")) {
+			directive->directive_type = Ast_Directive::INCLUDE;
+		}
+
+		auto token = peek();
+		if (!expect_eat(Token::STRING_LIT)) {
+			compiler->report_error(token, "Expected string literal after #include or #use");
+			return directive;
+		}
+
+		String name = token->lexeme;
+		String base_path = basepath(lexer->file);
+
+		if (!expect_eat(';')) {
+			compiler->report_error(token, "Expected ';'");
+			return directive;
+		}
+
+		if (directive->directive_type == Ast_Directive::USE) {
+			directive->file = name;
+		} else {
+			const int MAX_PATH = 512;
+			char fullname[MAX_PATH];
+			snprintf(fullname, MAX_PATH, "%.*s%.*s", base_path.length, base_path.data, name.length, name.data);
+
+			directive->file = copy_string(to_string(fullname));
+		}
+	} else if (id->type == Token::IF) {
+		directive->directive_type = Ast_Directive::IF;
+
+	}
+
+	compiler->directives.add(directive);
+	return directive;
+}
+
 Ast_Expression *Parser::parse_declaration_or_statement(bool expect_semicolon) {
 	if (expect(Token::RETURN)) {
 		Ast_Return *ret = AST_NEW(Ast_Return);
@@ -448,17 +496,7 @@ Ast_Expression *Parser::parse_declaration_or_statement(bool expect_semicolon) {
 	}
 
 	if (expect_eat('#')) {
-		Ast_Directive *directive = AST_NEW(Ast_Directive);
-
-		auto id = parse_identifier();
-		if (!id) {
-			compiler->report_error(directive, "Expected identifier after '#'");
-			return 0;
-		}
-
-		directive->identifier = id;
-
-		return directive;
+		return parse_directive();
 	}
 	 
 	Ast_Expression *expr = parse_expression();
@@ -579,16 +617,6 @@ Ast_Expression *Parser::parse_postfix() {
 	auto target = parse_primary();
 	auto tok = peek();
 
-	if (expect_eat(Token::PLUS_PLUS) || expect_eat(Token::MINUS_MINUS)) {
-		auto expr = AST_NEW(Ast_Unary);
-
-		expr->target = target;
-		expr->is_pre = false;
-		expr->op = tok->type;
-
-		return expr;
-	}
-
     while (!expect(Token::END_OF_FILE)) {
         if (expect('.')) {
             Ast_Member *member = AST_NEW(Ast_Member);
@@ -616,6 +644,17 @@ Ast_Expression *Parser::parse_postfix() {
         } else {
             break;
         }
+	}
+
+	tok = peek();
+	if (expect_eat(Token::PLUS_PLUS) || expect_eat(Token::MINUS_MINUS)) {
+		auto expr = AST_NEW(Ast_Unary);
+
+		expr->target = target;
+		expr->is_pre = false;
+		expr->op = tok->type;
+
+		return expr;
 	}
 
 	return target;
@@ -688,6 +727,15 @@ Ast_Expression *Parser::parse_primary() {
 		return lit;
 	}
 	
+	if (expect(Token::STRING_LIT)) {
+		Ast_Literal *lit = AST_NEW(Ast_Literal);
+		next();
+
+		lit->literal_type = Ast_Literal::STRING;
+		lit->string_value = t->lexeme;
+		return lit;
+	}
+
 	if (expect(Token::TRUE)) {
 		Ast_Literal *lit = AST_NEW(Ast_Literal);
 		next();
@@ -747,6 +795,7 @@ Ast_Type_Info *Parser::parse_type_specifier() {
 	Token *t = peek();
 
 	switch (t->type) {
+		case Token::STR: type_info = compiler->type_string; break;
 		case Token::VOID: type_info = compiler->type_void; break;
 		case Token::BOOL: type_info = compiler->type_bool; break;
 		case Token::S8: type_info = compiler->type_s8; break;

@@ -18,6 +18,9 @@ static bool is_hex_digit(char c);
 static bool is_not_quote(char c);
 static bool is_alpha(char c);
 
+String escape_str_lit(String text);
+char make_escape(char c);
+
 const char *operator_chars = "+-=*/();,.{}&|:<>![]@%^#";
 
 const char *keyword_tokens[] = {
@@ -51,6 +54,7 @@ const char *keyword_tokens[] = {
 	"f64",
 	"bool",
 	"void",
+	"str",
 };
 
 const Token::Type keyword_token_types[] = {
@@ -84,6 +88,7 @@ const Token::Type keyword_token_types[] = {
 	Token::F64,
 	Token::BOOL,
 	Token::VOID,
+	Token::STR,
 };
 
 const char *two_char_tokens[] = {
@@ -353,6 +358,9 @@ void read_string_lit(Lexer *l, Token *t) {
 	String lexeme = read_xchars(l, is_not_quote);
 	l->eat_char();
 
+
+	lexeme = escape_str_lit(lexeme);
+
 	t->type = Token::STRING_LIT;
 	t->lexeme = lexeme;
 }
@@ -410,4 +418,56 @@ bool is_not_quote(char c) {
 
 bool is_alpha(char c) {
     return isalpha(c);
+}
+
+String escape_str_lit(String text) {
+	int sl = text.length, nl = sl, i, j;
+	char *etext;
+
+	for (i = 0; i < sl; ++i) {
+		if (text[i] != '\\') continue;
+
+		switch (text[i + 1]) {
+		case 'n':
+		case 'r':
+		case 't':
+		case '0':
+			nl--;
+			break;
+		default:
+			break;
+		}
+	}
+
+	etext = new char[nl];
+	for (i = 0, j = 0; i < sl; ++i, ++j) {
+		if (text[i] != '\\') {
+			etext[i] = text[i];
+			continue;
+		}
+
+		char esc = make_escape(text[i + 1]);
+		etext[j] = esc;
+		i++;
+	}
+
+	String _new;
+	_new.data = etext;
+	_new.length = nl;
+	return _new;
+}
+
+char make_escape(char c) {
+	switch (c) {
+	case 'n':
+		return '\n';
+	case 'r':
+		return '\t';
+	case 't':
+		return '\r';
+	case '0':
+		return '\0';
+	default:
+		return c;
+	}
 }

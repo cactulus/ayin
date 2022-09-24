@@ -1,0 +1,12 @@
+#use "basic";
+#use "array";
+
+func main() s32 {
+	a: [..]s32;
+
+	array_add(&a, 2);
+
+	printf("Hello World".data);
+
+	return 0;
+}

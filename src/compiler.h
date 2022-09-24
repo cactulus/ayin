@@ -21,6 +21,8 @@ struct Compiler {
 	Atom_Table atom_table;
 	s32 errors_reported = 0;
 
+	Ast_Type_Info *type_string;
+	Ast_Type_Info *type_string_data;
 	Ast_Type_Info *type_void;
 	Ast_Type_Info *type_bool;
 	Ast_Type_Info *type_s8;
@@ -40,6 +42,11 @@ struct Compiler {
 	Atom *atom_capacity;
 	Atom *atom_it;
 	Atom *atom_it_index;
+
+	Array<String> included_files;
+	Array<Ast_Directive *> directives;
+
+	String stdlib_path;
 
 	Compiler();
 
