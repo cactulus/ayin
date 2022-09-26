@@ -91,6 +91,7 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 			convert_scope(static_cast<Ast_Scope *>(expression));
 		} break;
 		case Ast::DIRECTIVE:
+		case Ast::TYPE_ALIAS:
 		case Ast::STRUCT: {
 		} break;
 		case Ast::FUNCTION: {
@@ -145,6 +146,7 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
             
             irb->SetInsertPoint(current_block);
             irb->CreateCondBr(cond, then_block, failure_target);
+            irb->SetInsertPoint(next_block);
             irb->SetInsertPoint(next_block);
 		} break;
 		case Ast::WHILE: {
@@ -272,13 +274,31 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 	switch (expression->type) {
 		case Ast_Expression::DECLARATION: {
 			auto decl = static_cast<Ast_Declaration *>(expression);
-			auto var = irb->CreateAlloca(convert_type(decl->type_info));
-			if (decl->initializer) {
-				auto value = convert_expression(decl->initializer);
-				irb->CreateStore(value, var);
-				
+			auto decl_type = convert_type(decl->type_info);
+
+			if (decl->flags & VAR_GLOBAL) {
+				auto var_name = STR_REF(decl->identifier->atom->id);
+				llvm_module->getOrInsertGlobal(var_name, decl_type);
+				auto var = llvm_module->getGlobalVariable(var_name);
+
+				if (decl->initializer) {
+					var->setConstant(decl->flags & VAR_CONSTANT);
+
+					auto init = dyn_cast<Constant>(convert_expression(decl->initializer));
+					var->setInitializer(init);
+				} else {
+					var->setExternallyInitialized(false);
+				}
+			} else {
+				auto var = irb->CreateAlloca(decl_type);
+				if (decl->initializer) {
+					auto value = convert_expression(decl->initializer);
+					irb->CreateStore(value, var);
+				} else {
+					irb->CreateStore(Constant::getNullValue(decl_type), var);
+				}
+				decl->llvm_reference = var;
 			}
-			decl->llvm_reference = var;
 
 			return 0;
 		} break;
@@ -303,6 +323,9 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 					Constant *length = ConstantInt::get(type_i64, literal->string_value.length);
 
 					return ConstantStruct::get(type_string, { data, length });
+				}
+				case Ast_Literal::NIL: {
+					return ConstantPointerNull::get(static_cast<PointerType *>(convert_type(literal->type_info)));
 				}
 				default:
 					assert(0 && "LLVM emission for literal type not implemented");
@@ -331,7 +354,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
             Value *value = convert_expression(cast->expression, is_lvalue);
             
             auto src = cast->expression->type_info;
-            auto dst = cast->target_type;
+            auto dst = cast->type_info;
             
             auto src_type = convert_type(src);
             auto dst_type = convert_type(dst);
@@ -440,7 +463,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 		case Ast::SIZEOF: {
 			Ast_Sizeof *size = static_cast<Ast_Sizeof *>(expression);
 			Type *type = convert_type(size->target_type);
-			int byte_size = llvm_module->getDataLayout().getTypeSizeInBits(type);
+			int byte_size = llvm_module->getDataLayout().getTypeAllocSize(type);
 
 			return ConstantInt::get(type_i32, byte_size);
 		}
@@ -569,7 +592,7 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
 
 	if (token_op == '=') {
 		new_value = rhs;
-	    auto target = convert_expression(binary->lhs);
+	    auto target = convert_expression(binary->lhs, true);
 
 	    irb->CreateStore(new_value, target);
 	} else if (binop_is_binary(token_op) || (token_op >= Token::ADD_EQ && token_op <= Token::MOD_EQ)) {
@@ -642,6 +665,10 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
 
 Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
 	if (type_info->type == Ast_Type_Info::POINTER) {
+		if (type_info->element_type->type == Ast_Type_Info::VOID) {
+			return type_i8->getPointerTo();
+		}
+
 		return convert_type(type_info->element_type)->getPointerTo();
 	}
 

@@ -17,13 +17,15 @@ struct Compiler {
 
 	Ast_Scope *global_scope;
 
-	Atom_Table source_table;
+	Array<String> source_table_files;
+	Array<String> source_table_contents;
 	Atom_Table atom_table;
 	s32 errors_reported = 0;
 
 	Ast_Type_Info *type_string;
 	Ast_Type_Info *type_string_data;
 	Ast_Type_Info *type_void;
+	Ast_Type_Info *type_void_ptr;
 	Ast_Type_Info *type_bool;
 	Ast_Type_Info *type_s8;
 	Ast_Type_Info *type_s16;
@@ -43,7 +45,6 @@ struct Compiler {
 	Atom *atom_it;
 	Atom *atom_it_index;
 
-	Array<String> included_files;
 	Array<Ast_Directive *> directives;
 
 	String stdlib_path;

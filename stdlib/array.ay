@@ -1,3 +1,26 @@
+#use "libc";
+
+func array_reserve<T>(array: *[..] T, amount: s64) {
+    if amount <= 0 {
+        amount = 16;
+    }
+
+    mem := cast(*T) malloc(amount * sizeof(T));
+
+    if array.data != nil {
+        memcpy(mem, array.data, array.length * sizeof(T));
+        free(array.data);
+    }
+
+    array.data = mem;
+    array.capacity = amount;
+}
+
 func array_add<T>(array: *[..] T, item: T) {
-	array.length++;
+    if array.length + 1 >= array.capacity {
+        array_reserve(array, array.capacity * 2);
+    }
+
+    array.length++;
+    (*array)[array.length - 1] = item;
 }

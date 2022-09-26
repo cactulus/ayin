@@ -1,0 +1,17 @@
+extern func printf(fmt: *u8, ...) s32;
+
+alias FILE void;
+extern func fopen(path: *u8, mode: *u8) *FILE;
+extern func fclose(file: *FILE) s32;
+extern func ftell(file: *FILE) s32;
+extern func fread(ptr: *void, size: s64, count: s64, file: *FILE) s64;
+
+SEEK_SET :: 0;
+SEEK_CUR :: 1;
+SEEK_END :: 2;
+
+extern func fseek(file: *FILE, offset: s32, origin: s32);
+
+extern func malloc(size: u64) *void;
+extern func free(ptr: *void);
+extern func memcpy(dest: *void, src: *void, count: u64);

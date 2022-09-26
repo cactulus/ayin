@@ -92,11 +92,10 @@ const Token::Type keyword_token_types[] = {
 };
 
 const char *two_char_tokens[] = {
-	"::", "..", "+=", "-=", "*=", "/=", "%=", "==", "!=", "<=", ">=", "&&", "||", "++", "--", "<<", ">>", "&=", "|=", "^="
+	"..", "+=", "-=", "*=", "/=", "%=", "==", "!=", "<=", ">=", "&&", "||", "++", "--", "<<", ">>", "&=", "|=", "^="
 };
 
 const Token::Type two_char_token_types[] = {
-	Token::COLON_COLON,
 	Token::DOT_DOT,
 	Token::ADD_EQ,
 	Token::SUB_EQ,

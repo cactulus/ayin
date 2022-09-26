@@ -15,7 +15,6 @@ struct Token {
 		ERROR = 0,
 		END_OF_FILE = 1,
 
-		COLON_COLON,
 		DOT_DOT,
 		DOT_DOT_DOT,
 

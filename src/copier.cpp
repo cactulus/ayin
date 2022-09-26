@@ -13,6 +13,7 @@
 
 Copier::Copier(Compiler *compiler) {
 	this->compiler = compiler;
+	this->current_scope = compiler->global_scope;
 }
 
 Ast_Expression *Copier::copy(Ast_Expression *ast) {
@@ -31,8 +32,9 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 			auto old = static_cast<Ast_Declaration *>(ast);
 			auto _new = COPY_NEW(Ast_Declaration);
 
-			COPY_F(identifier);
+			COPY_C(identifier);
 			COPY_C(initializer);
+			COPY_F(flags);
 
 			return _new;
 		}
@@ -238,6 +240,9 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 }
 
 Ast_Function *Copier::copy_function(Ast_Function *old) {
+	Ast_Scope *old_current_scope = current_scope;
+	current_scope = compiler->global_scope;
+
 	Ast_Function *_new = COPY_NEW(Ast_Function);
 
 	COPY_C(identifier);
@@ -247,8 +252,8 @@ Ast_Function *Copier::copy_function(Ast_Function *old) {
 
 	if (old->parameter_scope)
 		_new->parameter_scope = push_scope(old->parameter_scope);
-    
-    COPY_TYPE(return_type);
+
+	COPY_TYPE(return_type);
 	_new->block_scope = push_scope(old->block_scope);
 
 	COPY_F(linkage_name);
@@ -264,21 +269,12 @@ Ast_Function *Copier::copy_function(Ast_Function *old) {
 
 	pop_scope();
 
+	current_scope = old_current_scope;
+
 	return _new;
 }
 
 Ast_Type_Info *Copier::copy_type(Ast_Type_Info *old) {
-	if (!old) return 0;
-
-	if (old->type == Ast_Type_Info::UNRESOLVED) {
-		Ast_Type_Info *_new = new Ast_Type_Info();
-
-		COPY_F(type);
-		COPY_C(unresolved_name);
-
-		return _new;
-	}
-	
 	return old;
 }
 

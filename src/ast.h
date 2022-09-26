@@ -152,11 +152,14 @@ struct Ast_Type_Info {
 	s32 size = 0;
 };
 
+const u8 VAR_GLOBAL = 0x1;
+const u8 VAR_CONSTANT = 0x2;
+
 struct Ast_Declaration : Ast_Expression {
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
 	Ast_Expression *initializer = 0;
-	bool is_constant = false;
+	u8 flags = 0;
 
 	Ast_Declaration() {
 		type = Ast::DECLARATION;
@@ -255,7 +258,8 @@ struct Ast_Literal : Ast_Expression {
 		BOOL,
 		FLOAT,
 		INT,
-		STRING
+		STRING,
+		NIL
 	};
 
 	Literal_Type literal_type;

@@ -82,6 +82,7 @@ Ast_Expression *Parser::parse_global() {
 
 	Ast_Declaration *var_decl = parse_variable_declaration(true);
 	if (var_decl) {
+		var_decl->flags |= VAR_GLOBAL;
 		return var_decl;
 	}
 
@@ -164,6 +165,10 @@ Ast_Type_Alias *Parser::parse_type_alias() {
 	}
 
 	ta->type_info = parse_type_specifier();
+
+	if (!expect_eat(';')) {
+		compiler->report_error(peek(), "Expected ';' after type alias");
+	}
 
 	return ta;
 }
@@ -312,6 +317,9 @@ Ast_Declaration *Parser::parse_variable_declaration(bool expect_semicolon) {
 
 void Parser::parse_variable_declaration_base(Ast_Declaration *var_decl) {
 	if (expect_eat('=')) {
+		var_decl->initializer = parse_expression();
+	} else if (expect_eat(':')) {
+		var_decl->flags |= VAR_CONSTANT;
 		var_decl->initializer = parse_expression();
 	} else {
 		var_decl->type_info = parse_type_specifier();
@@ -707,6 +715,14 @@ Ast_Expression *Parser::parse_primary() {
 		}
 
 		return id;
+	}
+
+	if (expect(Token::NIL)) {
+		Ast_Literal *lit = AST_NEW(Ast_Literal);
+		next();
+
+		lit->literal_type = Ast_Literal::NIL;
+		return lit;
 	}
 
 	if (expect(Token::INT_LIT)) {

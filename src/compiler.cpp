@@ -11,13 +11,14 @@ const int MAX_PATH = 512;
 
 Compiler::Compiler() {
     llvm_converter = new LLVM_Converter(this);
+	global_scope = new Ast_Scope();
 	copier = new Copier(this);
     typer = new Typer(this);
 
-    global_scope = new Ast_Scope();
-
 	type_void = new Ast_Type_Info();
 	type_void->type = Ast_Type_Info::VOID;
+
+	type_void_ptr = make_pointer_type(type_void);
 
 	type_bool = new Ast_Type_Info();
 	type_bool->type = Ast_Type_Info::BOOL;
@@ -91,6 +92,7 @@ void Compiler::run(String entry_file) {
 			directives.ordered_remove(0);
 			break;
 		case Ast_Directive::IF:
+			directives.ordered_remove(0);
 			break;
 		}
 	}
@@ -106,7 +108,7 @@ void Compiler::run(String entry_file) {
 }
 
 void Compiler::parse_file(String file_path) {
-	for (auto included_file : included_files) {
+	for (auto included_file : source_table_files) {
 		if (included_file == file_path) {
 			return;
 		}
@@ -118,12 +120,9 @@ void Compiler::parse_file(String file_path) {
 		std::exit(1);
 	}
 
-	Atom *file_atom = new Atom();
-
-	file_atom->id = copy_string(content);
-	file_atom->hash = source_table.hash_str(file_path);
-
-	source_table.data.add(file_atom);
+	file_path = copy_string(file_path);
+	source_table_files.add(file_path);
+	source_table_contents.add(copy_string(content));
 
 	Lexer lexer(this, file_path, content);
 	lexer.tokenize();
@@ -221,7 +220,13 @@ void Compiler::report_error(Source_Location location, const char *fmt, va_list a
 	vprintf(fmt, args);
     printf("\n");
 
-    String source = source_table.find_atom_hash(location.file)->id;
+	String source;
+	for (int i = 0; i < source_table_files.length; ++i) {
+		if (source_table_files[i] == location.file) {
+			source = source_table_contents[i];
+			break;
+		}
+	}
 
 	s32 line = 0;
 	s32 pos = 0;

@@ -252,6 +252,7 @@ void Typer::type_check_function(Ast_Function *function) {
 	Ast_Function *old_current_function = current_function;
 	current_function = function;
 
+
 	for (auto par : function->parameter_scope->declarations) {
 		type_check_variable_declaration(static_cast<Ast_Declaration *>(par));
 	}
@@ -297,6 +298,9 @@ void Typer::infer_type(Ast_Expression *expression) {
 				case Ast_Literal::STRING:
 					lit->type_info = compiler->type_string;
 					break;
+				case Ast_Literal::NIL:
+					lit->type_info = compiler->type_void_ptr;
+					break;
 			}
 		} break;
 		case Ast_Expression::IDENTIFIER: {
@@ -312,7 +316,19 @@ void Typer::infer_type(Ast_Expression *expression) {
 		} break;
 		case Ast_Expression::CAST: {
 			Ast_Cast *cast = static_cast<Ast_Cast *>(expression);
+			infer_type(cast->expression);
 			cast->type_info = cast->target_type;
+
+			Ast_Type_Info *new_type = resolve_type_info(cast->type_info);
+
+			if (new_type) {
+				cast->type_info = new_type;
+			} else {
+				auto name = cast->type_info->unresolved_name;
+				compiler->report_error(name,
+					"Can't resolve symbol '%.*s'",
+					name->atom->id.length, name->atom->id.data);
+			}
 		} break;
 		case Ast::CALL: {
 			Ast_Call *call = static_cast<Ast_Call *>(expression);
@@ -414,7 +430,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 					}
 
 					Ast_Declaration *decl = static_cast<Ast_Declaration *>(var_expr);
-					if (decl->is_constant) {
+					if (decl->flags & VAR_CONSTANT) {
 						compiler->report_error(binary->lhs, "Can't assign value to constant variable");
 					}
 				}
@@ -492,6 +508,17 @@ void Typer::infer_type(Ast_Expression *expression) {
 		case Ast_Expression::SIZEOF: {
 			Ast_Sizeof *size = static_cast<Ast_Sizeof *>(expression);
 			size->type_info = compiler->type_s32;
+
+			Ast_Type_Info *new_type = resolve_type_info(size->target_type);
+
+			if (new_type) {
+				size->target_type = new_type;
+			} else {
+				auto name = size->target_type->unresolved_name;
+				compiler->report_error(name,
+					"Can't resolve symbol '%.*s'",
+					name->atom->id.length, name->atom->id.data);
+			}
 		} break;
 		case Ast_Expression::INDEX: {
 			Ast_Index *index = static_cast<Ast_Index *>(expression);
@@ -689,7 +716,7 @@ Ast_Expression *Typer::check_expression_type_and_cast(Ast_Expression *expression
     Ast_Expression *maybe_casted = expression;
     
     if (!types_match(ltype, rtype)) {
-        if (type_is_int(ltype) && type_is_int(rtype) && (ltype->is_signed == rtype->is_signed)) {
+        if (type_is_int(ltype) && type_is_int(rtype)) {
             maybe_casted = make_cast(maybe_casted, ltype);
         } else if (type_is_float(ltype) && type_is_float(rtype)) {
             maybe_casted = make_cast(maybe_casted, ltype);
@@ -776,11 +803,13 @@ Ast_Function *Typer::make_polymorph_function(Ast_Function *template_function, Ar
 	if (compiler->errors_reported)
 		return poly;
 
+	/* find bug where this triggers even though it shouldnt. For example calling array_reserve from array_add */
 	for (auto decl : poly->template_scope->declarations) {
 		auto alias = static_cast<Ast_Type_Alias *>(decl);
 		if (alias->type_info->type == Ast_Type_Info::TYPE) {
 			auto name = alias->identifier->atom->id;
-			compiler->report_error(alias, "Failed to fill out type '%.*s'", name.length, name.data);
+			
+		//	compiler->report_error(alias, "Failed to fill out type '%.*s'", name.length, name.data);
 		}
 	}
 
@@ -829,8 +858,7 @@ bool Typer::can_fill_polymorph(Ast_Type_Info *par_type, Ast_Type_Info *arg_type)
 		bool success = can_fill_polymorph(par_type->element_type, arg_type->element_type);
 		if (compiler->errors_reported) return false;
 
-		return success;
-		
+		return success;	
 	}
 
     return false;
