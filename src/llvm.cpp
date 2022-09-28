@@ -5,6 +5,7 @@
 #include "llvm/IR/ConstantFolder.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -12,6 +13,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 /* TODO: remove later. uniform llvm version */
 #ifdef _WIN64
@@ -35,44 +37,56 @@
 
 using namespace llvm;
 
+/* TODO: move to CLI input later */
+static bool b_debug = true;
+static bool b_optimize = false;
+
 LLVM_Converter::LLVM_Converter(Compiler *compiler) {
 	this->compiler = compiler;
 
 	InitializeAllTargetInfos();
-    InitializeAllTargets();
-    InitializeAllTargetMCs();
-    InitializeAllAsmParsers();
-    InitializeAllAsmPrinters();
+	InitializeAllTargets();
+	InitializeAllTargetMCs();
+	InitializeAllAsmParsers();
+	InitializeAllAsmPrinters();
 
 	std::string target_triple = llvm::sys::getDefaultTargetTriple();
-    std::string error;
-    auto target = TargetRegistry::lookupTarget(target_triple, error);
-    
-    if (!target) {
-        errs() << error;
-        return;
-    }
-    
-    auto cpu = "generic";
-    auto features = "";
-    
-    TargetOptions opt;
-    auto rm = Optional<Reloc::Model>();
-    target_machine = target->createTargetMachine(target_triple, cpu, features, opt, rm);
-    
-    llvm_context = new LLVMContext();
-    llvm_module = new Module("Ayin", *llvm_context);
-    irb = new IRBuilder<ConstantFolder, IRBuilderDefaultInserter>(*llvm_context);
+	std::string error;
+	auto target = TargetRegistry::lookupTarget(target_triple, error);
 
-    type_void = Type::getVoidTy(*llvm_context);
-    type_i1 = Type::getInt1Ty(*llvm_context);
-    type_i8 = Type::getInt8Ty(*llvm_context);
-    type_i16 = Type::getInt16Ty(*llvm_context);
-    type_i32 = Type::getInt32Ty(*llvm_context);
-    type_i64 = Type::getInt64Ty(*llvm_context);
-    type_f32 = Type::getFloatTy(*llvm_context);
+	if (!target) {
+		errs() << error;
+		return;
+	}
+
+	auto cpu = "generic";
+	auto features = "";
+
+	TargetOptions opt;
+	auto rm = Optional<Reloc::Model>();
+	target_machine = target->createTargetMachine(target_triple, cpu, features, opt, rm);
+
+	llvm_context = new LLVMContext();
+	llvm_module = new Module("Ayin", *llvm_context);
+	irb = new IRBuilder<ConstantFolder, IRBuilderDefaultInserter>(*llvm_context);
+
+	type_void = Type::getVoidTy(*llvm_context);
+	type_i1 = Type::getInt1Ty(*llvm_context);
+	type_i8 = Type::getInt8Ty(*llvm_context);
+	type_i16 = Type::getInt16Ty(*llvm_context);
+	type_i32 = Type::getInt32Ty(*llvm_context);
+	type_i64 = Type::getInt64Ty(*llvm_context);
+	type_f32 = Type::getFloatTy(*llvm_context);
 	type_f64 = Type::getDoubleTy(*llvm_context);
-	type_string = StructType::create(*llvm_context, {type_i8->getPointerTo(), type_i64}, "string", true);
+	type_string = StructType::create(*llvm_context, { type_i8->getPointerTo(), type_i64 }, "string", true);
+}
+
+void LLVM_Converter::convert(String entry_file, Ast_Scope *scope) {
+	if (b_debug) {
+		debug.init(this, entry_file);
+	}
+
+	convert_scope(scope);
 }
 
 void LLVM_Converter::convert_scope(Ast_Scope *scope) {
@@ -209,6 +223,9 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 			auto inc_block = BasicBlock::Create(*llvm_context, "", current_function);
 			auto after_block = BasicBlock::Create(*llvm_context, "", current_function);
 
+			continue_blocks.add(inc_block);
+			break_blocks.add(after_block);
+
 			irb->CreateBr(cond_block);
 			irb->SetInsertPoint(cond_block);
 
@@ -239,80 +256,12 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 				loaded_index,
 				ConstantInt::get(convert_type(it_index_type), 1)
 			);
-			irb->CreateStore(added, it_index_alloca);
+			store(added, it_index_alloca);
 			irb->CreateBr(cond_block);
 
 			irb->SetInsertPoint(after_block);
-
-			/*
-
-			auto it_decl = _for->iterator_decl;
-			auto decl_type = it_decl->type_info;
-
-			Value *it_index_alloca;
-			Value *it_alloca;
-
-			auto it_index_decl = _for->iterator_index_decl;
-			Ast_Type_Info *it_index_type = 0;
-			if (it_index_decl) {
-				convert_statement(it_index_decl);
-
-				it_index_type = it_index_decl->type_info;
-				it_index_alloca = it_index_decl->llvm_reference;
-
-				convert_statement(it_decl);
-				it_alloca = it_decl->llvm_reference;
-			} else {
-				convert_statement(it_decl);
-				it_alloca = it_decl->llvm_reference;
-
-				it_index_type = decl_type;
-				it_index_alloca = it_alloca;
-			}
-
-			auto current_block = irb->GetInsertBlock();
-
-			BasicBlock *next_block = BasicBlock::Create(*llvm_context, "", current_block->getParent());
-			BasicBlock *loop_header = BasicBlock::Create(*llvm_context, "", current_block->getParent());
-			BasicBlock *loop_body = BasicBlock::Create(*llvm_context, "", current_block->getParent());
-
-			irb->CreateBr(loop_header);
-
-			irb->SetInsertPoint(loop_header);
-			auto it_index = irb->CreateLoad(it_index_alloca);
-
-			auto upper = convert_expression(_for->upper_range_expression);
-			Value *cond = nullptr;
-			if (it_index_decl) {
-				if (it_index_type->is_signed) {
-					cond = irb->CreateICmpSLT(it_index, upper);
-				} else {
-					cond = irb->CreateICmpULT(it_index, upper);
-				}
-			} else {
-				if (it_index_type->is_signed) {
-					cond = irb->CreateICmpSLE(it_index, upper);
-				} else {
-					cond = irb->CreateICmpULE(it_index, upper);
-				}
-			}
-
-			irb->SetInsertPoint(loop_header);
-			irb->CreateCondBr(cond, loop_body, next_block);
-
-			irb->SetInsertPoint(loop_body);
-			if (it_index_decl) {
-				convert_statement(it_decl);
-			}
-
-			convert_statement(_for->body);
-
-			it_index = irb->CreateLoad(it_index_alloca);
-			irb->CreateStore(irb->CreateAdd(it_index, ConstantInt::get(convert_type(it_index_type), 1)), it_index_alloca);
-			if (!irb->GetInsertBlock()->getTerminator()) irb->CreateBr(loop_header);
-
-			irb->SetInsertPoint(next_block);*/
-
+			continue_blocks.pop();
+			break_blocks.pop();
 			break;
 		}
 		case Ast::CONTINUE:
@@ -357,12 +306,17 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 					var->setExternallyInitialized(false);
 				}
 			} else {
-				auto var = irb->CreateAlloca(decl_type);
+				auto var = lalloca(decl_type);
+
+				if (b_debug) {
+					debug.add_variable(decl->identifier, var, irb->GetInsertBlock());
+				}
+
 				if (decl->initializer) {
 					auto value = convert_expression(decl->initializer);
-					irb->CreateStore(value, var);
+					store(value, var);
 				} else {
-					irb->CreateStore(Constant::getNullValue(decl_type), var);
+					store(Constant::getNullValue(decl_type), var);
 				}
 				decl->llvm_reference = var;
 			}
@@ -472,7 +426,13 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				arguments.add(convert_expression(arg));
 			}
 
-			return irb->CreateCall(fun, ArrayRef<Value *>(arguments.data, arguments.length));
+			Instruction *inst = irb->CreateCall(fun, ArrayRef<Value *>(arguments.data, arguments.length));
+
+			if (b_debug) {
+				debug.add_inst(expression, inst);
+			}
+
+			return inst;
 		}
 		case Ast::BINARY: {
 			Ast_Binary *binary = static_cast<Ast_Binary *>(expression);
@@ -517,7 +477,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 					}
 
 					auto val = irb->CreateAdd(loaded, one);
-					irb->CreateStore(val, target);
+					store(val, target);
 
 					if (unary->is_pre) {
 						return val;
@@ -661,7 +621,7 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
 		new_value = rhs;
 	    auto target = convert_expression(binary->lhs, true);
 
-	    irb->CreateStore(new_value, target);
+	    store(new_value, target);
 	} else if (binop_is_binary(token_op) || (token_op >= Token::ADD_EQ && token_op <= Token::MOD_EQ)) {
 		auto lhs = convert_expression(binary->lhs);
 	    if (is_ptr) {
@@ -690,7 +650,7 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
         }
         if (token_op >= Token::ADD_EQ && token_op <= Token::MOD_EQ) {
 	        auto target = convert_expression(binary->lhs, true);
-	        irb->CreateStore(new_value, target);
+	        store(new_value, target);
         }
 	}  else if (binop_is_conditional(token_op)) {
 		auto lhs = convert_expression(binary->lhs);
@@ -821,17 +781,26 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 	BasicBlock *entry_block = BasicBlock::Create(*llvm_context, "", fn);
 	irb->SetInsertPoint(entry_block);
 
+	if (b_debug) {
+		debug.add_function(fun, fn);
+	}
+
 	s64 i = 0;
-	for (auto arg_it = fn->arg_begin(); arg_it != fn->arg_end(); arg_it++) {
+	for (auto &arg : fn->args()) {
 		auto par = static_cast<Ast_Declaration *>(fun->parameter_scope->declarations[i]);
 		
 		Type *par_type = convert_type(par->type_info);
-		Value *var = irb->CreateAlloca(par_type);
+		Value *var = lalloca(par_type);
 		par->llvm_reference = var;
-		irb->CreateStore(&*arg_it, var);
+		store(&arg, var);
+
+		if (b_debug) {
+			debug.add_parameter(par->identifier, var, i, arg, irb->GetInsertBlock());
+		}
+
 		++i;
 	}
-	
+
 	convert_scope(fun->block_scope);
 
 	if (!irb->GetInsertBlock()->getTerminator()) {
@@ -845,6 +814,10 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 }
 
 void LLVM_Converter::emit_llvm_ir() {
+	if (b_debug) {
+		debug.finalize();
+	}
+
     auto file_name = "output.ll";
     std::error_code ec;
     raw_fd_ostream dest(file_name, ec, sys::fs::OF_None);
@@ -853,6 +826,22 @@ void LLVM_Converter::emit_llvm_ir() {
 }
 
 void LLVM_Converter::emit_object_file() {
+	if (b_debug) {
+		debug.finalize();
+	}
+
+	if (b_optimize) {
+		legacy::PassManager *pm = new legacy::PassManager();
+		PassManagerBuilder pmb;
+		pmb.OptLevel = 3;
+		pmb.SizeLevel = 0;
+		pmb.DisableUnrollLoops = false;
+		pmb.LoopVectorize = true;
+		pmb.SLPVectorize = true;
+		pmb.populateModulePassManager(*pm);
+		pm->run(*llvm_module);
+	}
+
 	std::string target_triple = llvm::sys::getDefaultTargetTriple();
     
     llvm_module->setDataLayout(target_machine->createDataLayout());
@@ -916,10 +905,147 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
 	return fn;
 }
 
+Value *LLVM_Converter::lalloca(Type *ty) {
+	AllocaInst *lalloca = irb->CreateAlloca(ty);
+	lalloca->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	return lalloca;
+}
+
 Value *LLVM_Converter::load(Value *value) {
-	return irb->CreateLoad(value->getType()->getPointerElementType(), value);
+	Type *ty = value->getType()->getPointerElementType();
+	LoadInst *load = irb->CreateLoad(ty, value);
+	load->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	return load;
+}
+
+Value *LLVM_Converter::store(Value *value, Value *ptr) {
+	Type *ty = value->getType();
+	StoreInst *store = irb->CreateStore(value, ptr);
+	store->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	return store;
 }
 
 Value *LLVM_Converter::gep(llvm::Value *ptr, ArrayRef<Value *> idx_list) {
 	return irb->CreateInBoundsGEP(ptr->getType()->getPointerElementType(), ptr, idx_list);
+}
+
+void DebugInfo::init(LLVM_Converter *converter, String entry_file) {
+	db = new DIBuilder(*converter->llvm_module);
+	file = db->createFile(STR_REF(entry_file), ".");
+	/* TODO: check entry file later -> break up into directory and file name */
+	cu = db->createCompileUnit(dwarf::DW_LANG_C, file, "", b_optimize, "", 0);
+	layout = &converter->llvm_module->getDataLayout();
+
+	converter->llvm_module->addModuleFlag(Module::Warning, "Debug Info Version", DEBUG_METADATA_VERSION);
+}
+
+void DebugInfo::add_function(Ast_Function *ast_func, Function *f) {
+	/* TODO: check entry file later -> break up into directory and file name */
+	DIFile *sp_file = db->createFile(STR_REF(ast_func->location.file), ".");
+
+	DINode::DIFlags flags;
+	if (f->getName() == "main") {
+		flags = DINode::FlagZero;
+	} else {
+		flags = DINode::FlagPrototyped;
+	}
+
+	DISubroutineType *st = dyn_cast<DISubroutineType>(convert_type(f->getFunctionType()));
+	s64 fun_line = ast_func->location.line + 1;
+	DISubprogram *sp = db->createFunction(file, STR_REF(ast_func->identifier->atom->id), f->getName(), file, fun_line, st, fun_line, flags,
+		DISubprogram::DISPFlags::SPFlagDefinition);
+	f->setSubprogram(sp);
+
+	current_sp = sp;
+}
+
+void DebugInfo::add_parameter(Ast_Identifier *id, Value *var, int arg_index, Argument &arg, BasicBlock *block) {
+	DIType *debug_ty = convert_type(arg.getType());
+	int par_line = id->location.line + 1;
+	DILocalVariable *debug_var = db->createParameterVariable(current_sp, STR_REF(id->atom->id), arg_index, current_sp->getFile(), par_line, debug_ty);
+
+	db->insertDeclare(var, debug_var, db->createExpression(),
+		DILocation::get(current_sp->getContext(), par_line, id->location.col, current_sp),
+		block);
+}
+
+void DebugInfo::add_variable(Ast_Identifier *id, Value *var, BasicBlock *block) {
+	DIType *debug_ty = convert_type(var->getType()->getPointerElementType());
+	int var_line = id->location.line + 1;
+	DILocalVariable *debug_var = db->createAutoVariable(current_sp, STR_REF(id->atom->id), current_sp->getFile(), var_line, debug_ty);
+	db->insertDeclare(var, debug_var, db->createExpression(),
+		DILocation::get(current_sp->getContext(), var_line, id->location.col, current_sp),
+		block);
+}
+
+void DebugInfo::add_inst(Ast_Expression *expr, llvm::Instruction *inst) {
+	DebugLoc loc = DebugLoc::get(expr->location.line + 1, expr->location.col, current_sp);
+	inst->setDebugLoc(loc);
+}
+
+DIType *DebugInfo::convert_type(Type *type) {
+	switch (type->getTypeID()) {
+		case Type::FloatTyID:
+			return db->createBasicType("float", 32, dwarf::DW_ATE_float);
+		case Type::DoubleTyID:
+			return db->createBasicType("double", 64, dwarf::DW_ATE_float);
+		case Type::VoidTyID:
+		case Type::LabelTyID:
+		case Type::MetadataTyID:
+		case Type::X86_MMXTyID:
+		case Type::VectorTyID:
+		case Type::TokenTyID: {
+			std::string name;
+			raw_string_ostream os(name);
+			type->print(os);
+			return db->createUnspecifiedType(name);
+		}
+		case Type::IntegerTyID: {
+			IntegerType *int_type = dyn_cast<IntegerType>(type);
+			return db->createBasicType("i" + std::to_string(int_type->getBitWidth()), int_type->getBitWidth(), dwarf::DW_ATE_unsigned);
+		}
+		case Type::FunctionTyID: {
+			FunctionType *func_type = dyn_cast<FunctionType>(type);
+			std::vector<Metadata *> arg_types;
+			
+			/* return type */
+			arg_types.push_back(convert_type(func_type->getReturnType()));
+
+			for (Type *arg_type : func_type->params()) {
+				arg_types.push_back(convert_type(arg_type));
+			}
+			return db->createSubroutineType(db->getOrCreateTypeArray(arg_types));
+		}
+		case Type::StructTyID: {
+			StructType *struct_type = dyn_cast<StructType>(type);
+			if (struct_type->isOpaque()) {
+				return db->createUnspecifiedType(struct_type->getName());
+			}
+			std::vector<Metadata *> arg_types;
+			int i = 0;
+			for (Type *arg_type : struct_type->elements()) {
+				DIType *decl_type = convert_type(arg_type);
+				arg_types.push_back(db->createMemberType(file, std::to_string(i), file, 0, layout->getTypeSizeInBits(arg_type), layout->getABITypeAlignment(arg_type), layout->getStructLayout(struct_type)->getElementOffsetInBits(i), DINode::FlagZero, decl_type));
+				i++;
+			}
+			return db->createStructType(file, struct_type->hasName() ? struct_type->getName() : "", file, 0, layout->getTypeSizeInBits(type), layout->getABITypeAlignment(type), DINode::FlagZero, 0, db->getOrCreateArray(arg_types));
+		}
+		case Type::ArrayTyID: {
+			ArrayType *array_type = dyn_cast<ArrayType>(type);
+			std::vector<Metadata *> subscripts;
+			subscripts.push_back(db->getOrCreateSubrange(0, array_type->getNumElements()));
+			return db->createArrayType(layout->getTypeSizeInBits(type), layout->getABITypeAlignment(type), convert_type(array_type->getElementType()), db->getOrCreateArray(subscripts));
+		}
+		case Type::PointerTyID: {
+			PointerType *pointer_type = dyn_cast<PointerType>(type);
+			return db->createPointerType(convert_type(pointer_type->getElementType()), layout->getTypeSizeInBits(type));
+		}
+	}
+
+	assert(0 && "Could not convert type to debug type");
+	return 0;
+}
+
+void DebugInfo::finalize() {
+	db->finalize();
 }

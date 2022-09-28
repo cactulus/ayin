@@ -5,6 +5,8 @@
 #include "parser.h"
 #include "llvm.h"
 
+#include <iostream>
+
 static String get_executable_path();
 
 const int MAX_PATH = 512;
@@ -100,7 +102,7 @@ void Compiler::run(String entry_file) {
 	typer->type_check_scope(global_scope);
     if (errors_reported) return;
 
-	llvm_converter->convert_scope(global_scope);
+	llvm_converter->convert(entry_file, global_scope);
     if (errors_reported) return;
 
 	llvm_converter->emit_llvm_ir();
