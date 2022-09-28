@@ -43,7 +43,7 @@ struct Typer {
 
 	Ast_Literal *make_integer_literal(s64 value, Ast_Type_Info *type_info, Ast *source_loc=0);
 	Ast_Identifier *make_identifier(Atom *name);
-	Ast_Member *Typer::make_member(Ast_Expression *aggregate_expression, Atom *field);
+	Ast_Member *make_member(Ast_Expression *aggregate_expression, Atom *field);
 	Ast_Index *make_index(Ast_Expression *array, Ast_Expression *index);
 };
 

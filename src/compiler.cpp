@@ -310,7 +310,8 @@ String get_executable_path() {
 }
 #endif
 
-#ifdef MACOSX
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
 
 String get_executable_path() {
 	const u32 BUFFER_SIZE = 512;
@@ -318,7 +319,7 @@ String get_executable_path() {
 
 	u32 bufsize = BUFFER_SIZE;
 	auto result = _NSGetExecutablePath(buf, &bufsize);
-	if (result != 0) return "";
+	if (result != 0) return to_string("");
 
 	return copy_string(to_string(buf));
 }

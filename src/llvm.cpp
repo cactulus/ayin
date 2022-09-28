@@ -554,11 +554,11 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
                 if (!is_lvalue) return load(element);
                 return element;
 			} else if (type_is_string(type)) {
-				array = irb->CreateGEP(array, { ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, 0) });
-				array = irb->CreateLoad(array);
-				auto element = irb->CreateGEP(array, index);
+				array = gep(array, { ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, 0) });
+				array = load(array);
+				auto element = gep(array, index);
 
-				if (!is_lvalue) return irb->CreateLoad(element);
+				if (!is_lvalue) return load(element);
 				return element;
 			}
             
