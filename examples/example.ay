@@ -1,12 +1,17 @@
-#use "basic";
+#use "libc";
 #use "array";
 
 func main() s32 {
 	a: [..]s32;
+	
+	array_reserve(&a, cast(s64) 0);
 
-	array_add(&a, 2);
+	for i := 0..10 {
+		a[i] = i;
+		a.length++;
+	}
 
-	printf("Hello World".data);
+	printf("%ld\n".data, a.capacity);
 
 	return 0;
 }

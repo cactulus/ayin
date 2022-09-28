@@ -179,6 +179,72 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 		} break;
 		case Ast::FOR: {
 			Ast_For *_for = static_cast<Ast_For *>(expression);
+			Value *it_index_alloca;
+			Value *it_alloca;
+
+			auto it_decl = _for->iterator_decl;
+			auto decl_type = it_decl->type_info;
+
+			auto it_index_decl = _for->iterator_index_decl;
+			Ast_Type_Info *it_index_type = 0;
+
+			if (it_index_decl) {
+				convert_statement(it_index_decl);
+
+				it_index_type = it_index_decl->type_info;
+				it_index_alloca = it_index_decl->llvm_reference;
+
+				convert_statement(it_decl);
+				it_alloca = it_decl->llvm_reference;
+			} else {
+				convert_statement(it_decl);
+				it_alloca = it_decl->llvm_reference;
+
+				it_index_type = decl_type;
+				it_index_alloca = it_alloca;
+			}
+
+			auto cond_block = BasicBlock::Create(*llvm_context, "", current_function);
+			auto body_block = BasicBlock::Create(*llvm_context, "", current_function);
+			auto inc_block = BasicBlock::Create(*llvm_context, "", current_function);
+			auto after_block = BasicBlock::Create(*llvm_context, "", current_function);
+
+			irb->CreateBr(cond_block);
+			irb->SetInsertPoint(cond_block);
+
+			auto loaded_index = load(it_index_alloca);
+
+			auto upper = convert_expression(_for->upper_range_expression);
+			Value *cond = nullptr;
+			if (it_index_type->is_signed) {
+				cond = irb->CreateICmpSLT(loaded_index, upper);
+			} else {
+				cond = irb->CreateICmpULT(loaded_index, upper);
+			}
+		
+			irb->CreateCondBr(cond, body_block, after_block);
+			irb->SetInsertPoint(body_block);
+
+			if (it_index_decl) {
+				convert_statement(it_decl);
+			}
+
+			convert_statement(_for->body);
+			
+			irb->CreateBr(inc_block);
+			irb->SetInsertPoint(inc_block);
+
+			loaded_index = load(it_index_alloca);
+			auto added = irb->CreateNSWAdd(
+				loaded_index,
+				ConstantInt::get(convert_type(it_index_type), 1)
+			);
+			irb->CreateStore(added, it_index_alloca);
+			irb->CreateBr(cond_block);
+
+			irb->SetInsertPoint(after_block);
+
+			/*
 
 			auto it_decl = _for->iterator_decl;
 			auto decl_type = it_decl->type_info;
@@ -241,10 +307,11 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 
 			convert_statement(_for->body);
 
+			it_index = irb->CreateLoad(it_index_alloca);
 			irb->CreateStore(irb->CreateAdd(it_index, ConstantInt::get(convert_type(it_index_type), 1)), it_index_alloca);
 			if (!irb->GetInsertBlock()->getTerminator()) irb->CreateBr(loop_header);
 
-			irb->SetInsertPoint(next_block);
+			irb->SetInsertPoint(next_block);*/
 
 			break;
 		}
@@ -854,5 +921,5 @@ Value *LLVM_Converter::load(Value *value) {
 }
 
 Value *LLVM_Converter::gep(llvm::Value *ptr, ArrayRef<Value *> idx_list) {
-	return irb->CreateGEP(ptr->getType()->getPointerElementType(), ptr, idx_list);
+	return irb->CreateInBoundsGEP(ptr->getType()->getPointerElementType(), ptr, idx_list);
 }
