@@ -51,13 +51,17 @@ struct DebugInfo {
 
 	llvm::DIType *convert_type(llvm::Type *type);
 
+	llvm::DIFile *create_file(String file);
+
 	void finalize();
 };
 
+struct CompileOptions;
 struct Compiler;
 struct LLVM_Converter {
 	Compiler *compiler;
 	DebugInfo debug;
+	CompileOptions *options;
 
 	llvm::Module *llvm_module;
 	llvm::LLVMContext *llvm_context;
@@ -81,7 +85,7 @@ struct LLVM_Converter {
 
 	LLVM_Converter(Compiler *compiler);
 
-	void convert(String entry_file, Ast_Scope *scope);
+	void convert(Ast_Scope *scope);
 	void convert_scope(Ast_Scope *scope);
 
 	void convert_statement(Ast_Expression *expression);
@@ -93,14 +97,15 @@ struct LLVM_Converter {
 
 	void convert_function(Ast_Function *fun);
 
+	void optimize();
 	void emit_llvm_ir();
 	void emit_object_file();
 
 	llvm::Function *get_or_create_function(Ast_Function *function); 
 	llvm::Value *lalloca(llvm::Type *ty);
-	llvm::Value *load(llvm::Value *value);
-	llvm::Value *store(llvm::Value *value, llvm::Value *ptr);
-	llvm::Value *gep(llvm::Value *ptr, llvm::ArrayRef<llvm::Value *> idx_list);
+	llvm::Value *load(Ast_Expression *expr, llvm::Value *value);
+	llvm::Value *store(Ast_Expression *expr, llvm::Value *value, llvm::Value *ptr);
+	llvm::Value *gep(Ast_Expression *expr, llvm::Value *ptr, llvm::ArrayRef<llvm::Value *> idx_list);
 };
 
 #endif

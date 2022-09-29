@@ -10,7 +10,17 @@
 #include "llvm.h"
 #include "typer.h"
 
+struct CompileOptions {
+	String input_file;
+	String output_file;
+	bool optimize = false;
+	bool debug = false;
+	bool emit_llvm = false;
+	bool compile_only = false;
+};
+
 struct Compiler {
+	CompileOptions options;
 	LLVM_Converter *llvm_converter;
 	Copier *copier;
 	Typer *typer;
@@ -49,13 +59,17 @@ struct Compiler {
 
 	String stdlib_path;
 
-	Compiler();
+	Compiler(CompileOptions options);
 
-	void run(String entry_file);
+	void run();
+
+	void link_program();
 
 	void parse_file(String file_path);
 
 	Atom *make_atom(String name);
+
+	u8 *get_command_line(Array<String> *strings);
 
 	void report_error(Source_Location location, const char *fmt, va_list args);
 	void report_error(Token *token, const char *fmt, ...);

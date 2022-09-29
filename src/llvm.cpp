@@ -37,12 +37,9 @@
 
 using namespace llvm;
 
-/* TODO: move to CLI input later */
-static bool b_debug = true;
-static bool b_optimize = false;
-
 LLVM_Converter::LLVM_Converter(Compiler *compiler) {
 	this->compiler = compiler;
+	this->options = &compiler->options;
 
 	InitializeAllTargetInfos();
 	InitializeAllTargets();
@@ -81,9 +78,9 @@ LLVM_Converter::LLVM_Converter(Compiler *compiler) {
 	type_string = StructType::create(*llvm_context, { type_i8->getPointerTo(), type_i64 }, "string", true);
 }
 
-void LLVM_Converter::convert(String entry_file, Ast_Scope *scope) {
-	if (b_debug) {
-		debug.init(this, entry_file);
+void LLVM_Converter::convert(Ast_Scope *scope) {
+	if (options->debug) {
+		debug.init(this, options->input_file);
 	}
 
 	convert_scope(scope);
@@ -123,9 +120,17 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 
 			if (ret->return_value) {
 				Value *return_value = convert_expression(ret->return_value);
-				irb->CreateRet(return_value);
+				Instruction *inst = irb->CreateRet(return_value);
+
+				if (options->debug) {
+					debug.add_inst(ret, inst);
+				}
 			} else {
-				irb->CreateRetVoid();
+				Instruction *inst = irb->CreateRetVoid();
+
+				if (options->debug) {
+					debug.add_inst(ret, inst);
+				}
 			}
 		} break;
 		case Ast::IF: {
@@ -135,8 +140,8 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
             auto current_block = irb->GetInsertBlock();
             
             BasicBlock *next_block = BasicBlock::Create(*llvm_context, "", current_block->getParent());
-            BasicBlock *then_block = nullptr;
-            BasicBlock *else_block = nullptr;
+            BasicBlock *then_block = 0;
+            BasicBlock *else_block = 0;
             
             BasicBlock *failure_target = next_block;
             
@@ -144,23 +149,38 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
             if (_if->then_statement) {
                 irb->SetInsertPoint(then_block);
                 convert_statement(_if->then_statement);
-                
             }
-            if (!irb->GetInsertBlock()->getTerminator()) irb->CreateBr(next_block);
+			if (!irb->GetInsertBlock()->getTerminator()) {
+				Instruction *br = irb->CreateBr(next_block);
+
+				if (options->debug) {
+					debug.add_inst(_if->then_statement, br);
+				}
+			}
             
             if (_if->else_statement) {
                 else_block = BasicBlock::Create(*llvm_context, "", current_block->getParent());
                 irb->SetInsertPoint(else_block);
                 convert_statement(_if->else_statement);
                 
-                if (!irb->GetInsertBlock()->getTerminator()) irb->CreateBr(next_block);
+				if (!irb->GetInsertBlock()->getTerminator()) {
+					Instruction *br = irb->CreateBr(next_block);
+
+					if (options->debug) {
+						debug.add_inst(_if->else_statement, br);
+					}
+				}
                 
                 failure_target = else_block;
             }
             
             irb->SetInsertPoint(current_block);
-            irb->CreateCondBr(cond, then_block, failure_target);
-            irb->SetInsertPoint(next_block);
+			Instruction *br = irb->CreateCondBr(cond, then_block, failure_target);
+
+			if (options->debug) {
+				debug.add_inst(_if->then_statement, br);
+			}
+
             irb->SetInsertPoint(next_block);
 		} break;
 		case Ast::WHILE: {
@@ -175,12 +195,20 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 			continue_blocks.add(loop_header);
 			break_blocks.add(next_block);
 
-            irb->CreateBr(loop_header);
+            Instruction *br = irb->CreateBr(loop_header);
+
+			if (options->debug) {
+				debug.add_inst(_while->condition, br);
+			}
             
             irb->SetInsertPoint(loop_header);
             auto cond = convert_expression(_while->condition);
             irb->SetInsertPoint(loop_header);
-            irb->CreateCondBr(cond, loop_body, next_block);
+            br = irb->CreateCondBr(cond, loop_body, next_block);
+
+			if (options->debug) {
+				debug.add_inst(_while->statement, br);
+			}
             
             irb->SetInsertPoint(loop_body);
             convert_statement(_while->statement);
@@ -226,10 +254,14 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 			continue_blocks.add(inc_block);
 			break_blocks.add(after_block);
 
-			irb->CreateBr(cond_block);
+			Instruction *br = irb->CreateBr(cond_block);
 			irb->SetInsertPoint(cond_block);
 
-			auto loaded_index = load(it_index_alloca);
+			if (options->debug) {
+				debug.add_inst(_for->iterator_decl, br);
+			}
+
+			auto loaded_index = load(_for, it_index_alloca);
 
 			auto upper = convert_expression(_for->upper_range_expression);
 			Value *cond = nullptr;
@@ -239,8 +271,13 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 				cond = irb->CreateICmpULT(loaded_index, upper);
 			}
 		
-			irb->CreateCondBr(cond, body_block, after_block);
+			br = irb->CreateCondBr(cond, body_block, after_block);
 			irb->SetInsertPoint(body_block);
+
+			if (options->debug) {
+				debug.add_inst(_for->iterator_decl, static_cast<Instruction *>(cond));
+				debug.add_inst(_for->body, br);
+			}
 
 			if (it_index_decl) {
 				convert_statement(it_decl);
@@ -248,16 +285,24 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 
 			convert_statement(_for->body);
 			
-			irb->CreateBr(inc_block);
+			br = irb->CreateBr(inc_block);
 			irb->SetInsertPoint(inc_block);
 
-			loaded_index = load(it_index_alloca);
+			if (options->debug) {
+				debug.add_inst(_for->iterator_decl, br);
+			}
+
+			loaded_index = load(_for, it_index_alloca);
 			auto added = irb->CreateNSWAdd(
 				loaded_index,
 				ConstantInt::get(convert_type(it_index_type), 1)
 			);
-			store(added, it_index_alloca);
-			irb->CreateBr(cond_block);
+			store(_for, added, it_index_alloca);
+			br = irb->CreateBr(cond_block);
+
+			if (options->debug) {
+				debug.add_inst(_for->iterator_decl, br);
+			}
 
 			irb->SetInsertPoint(after_block);
 			continue_blocks.pop();
@@ -308,15 +353,15 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 			} else {
 				auto var = lalloca(decl_type);
 
-				if (b_debug) {
+				if (options->debug) {
 					debug.add_variable(decl->identifier, var, irb->GetInsertBlock());
 				}
 
 				if (decl->initializer) {
 					auto value = convert_expression(decl->initializer);
-					store(value, var);
+					store(decl, value, var);
 				} else {
-					store(Constant::getNullValue(decl_type), var);
+					store(decl, Constant::getNullValue(decl_type), var);
 				}
 				decl->llvm_reference = var;
 			}
@@ -368,7 +413,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 			if (is_lvalue) {
 				return ref;
 			}
-			return load(ref);
+			return load(id, ref);
 		}
 		case Ast_Expression::CAST: {
 			Ast_Cast *cast = static_cast<Ast_Cast *>(expression);
@@ -415,7 +460,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
                 return irb->CreatePointerCast(value, dst_type);
 			}
 
-			return load(value);
+			return load(cast, value);
 		}
 		case Ast::CALL: {
 			Ast_Call *call = static_cast<Ast_Call *>(expression);
@@ -428,7 +473,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 
 			Instruction *inst = irb->CreateCall(fun, ArrayRef<Value *>(arguments.data, arguments.length));
 
-			if (b_debug) {
+			if (options->debug) {
 				debug.add_inst(expression, inst);
 			}
 
@@ -448,7 +493,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				case '*': {
 					auto value = convert_expression(unary->target, is_lvalue);
 
-					return load(value);
+					return load(unary, value);
 				}
 				case '!': {
 					auto target = convert_expression(unary->target);
@@ -466,7 +511,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				case Token::PLUS_PLUS:
 				case Token::MINUS_MINUS: {
 					auto target = convert_expression(unary->target, true);
-					auto loaded = load(target);
+					auto loaded = load(unary, target);
 					auto type = convert_type(unary->type_info);
 					Value *one;
 
@@ -477,7 +522,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 					}
 
 					auto val = irb->CreateAdd(loaded, one);
-					store(val, target);
+					store(unary, val, target);
 
 					if (unary->is_pre) {
 						return val;
@@ -501,30 +546,30 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
             
             auto type = array_index->expression->type_info;
             if (type_is_array(type) && type->array_size == -1) {
-                array = gep(array, {ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, 0)});
-                array = load(array);
-                auto element = gep(array, index);
+                array = gep(array_index, array, {ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, 0)});
+                array = load(array_index, array);
+                auto element = gep(array_index, array, index);
                 
-                if (!is_lvalue) return load(element);
+                if (!is_lvalue) return load(array_index, element);
                 return element;
             } else if (type_is_pointer(type)) {
-                auto ptr = load(array);
-                auto element = gep(ptr, {index});
+                auto ptr = load(array_index, array);
+                auto element = gep(array_index, ptr, {index});
                 
-                if (!is_lvalue) return load(element);
+                if (!is_lvalue) return load(array_index, element);
                 return element;
 			} else if (type_is_string(type)) {
-				array = gep(array, { ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, 0) });
-				array = load(array);
-				auto element = gep(array, index);
+				array = gep(array_index, array, { ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, 0) });
+				array = load(array_index, array);
+				auto element = gep(array_index, array, index);
 
-				if (!is_lvalue) return load(element);
+				if (!is_lvalue) return load(array_index, element);
 				return element;
 			}
             
-            auto element = gep(array, {ConstantInt::get(type_i32, 0), index});
+            auto element = gep(array_index, array, {ConstantInt::get(type_i32, 0), index});
             
-            if (!is_lvalue) return load(element);
+            if (!is_lvalue) return load(array_index, element);
             return element;
 
 			return 0;
@@ -536,8 +581,8 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 			if (auto constant = dyn_cast<Constant>(lhs)) {
 				return irb->CreateExtractValue(constant, member->field_index);
 			} else {
-				auto valueptr = gep(lhs, { ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, member->field_index) });
-				if (!is_lvalue) return load(valueptr);
+				auto valueptr = gep(member, lhs, { ConstantInt::get(type_i32, 0), ConstantInt::get(type_i32, member->field_index) });
+				if (!is_lvalue) return load(member, valueptr);
 				return valueptr;
 			}
 			return 0;
@@ -621,11 +666,11 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
 		new_value = rhs;
 	    auto target = convert_expression(binary->lhs, true);
 
-	    store(new_value, target);
+	    store(binary, new_value, target);
 	} else if (binop_is_binary(token_op) || (token_op >= Token::ADD_EQ && token_op <= Token::MOD_EQ)) {
 		auto lhs = convert_expression(binary->lhs);
 	    if (is_ptr) {
-	        new_value = irb->CreateInBoundsGEP(llvm_type, lhs, rhs);
+	        new_value = gep(binary, lhs, rhs);
         } else {
             switch (token_op) {
                 case '|':
@@ -650,7 +695,7 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
         }
         if (token_op >= Token::ADD_EQ && token_op <= Token::MOD_EQ) {
 	        auto target = convert_expression(binary->lhs, true);
-	        store(new_value, target);
+	        store(binary, new_value, target);
         }
 	}  else if (binop_is_conditional(token_op)) {
 		auto lhs = convert_expression(binary->lhs);
@@ -658,6 +703,10 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
 			new_value = irb->CreateFCmp(cmpop, lhs, rhs);
 		} else {
 			new_value = irb->CreateICmp(cmpop, lhs, rhs);
+		}
+
+		if (options->debug) {
+			debug.add_inst(binary->lhs, static_cast<Instruction *>(new_value));
 		}
     } else if (binop_is_logical(token_op)) {
 		auto lhs = convert_expression(binary->lhs);
@@ -667,9 +716,17 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
         lhs = irb->CreateIsNotNull(lhs);
 
         if (token_op == Token::AND_AND) {
-            irb->CreateCondBr(lhs, rhs_block, merge_block);
+            Instruction *br = irb->CreateCondBr(lhs, rhs_block, merge_block);
+
+			if (options->debug) {
+				debug.add_inst(binary->lhs, br);
+			}
         } else {
-            irb->CreateCondBr(lhs, merge_block, rhs_block);
+			Instruction *br = irb->CreateCondBr(lhs, merge_block, rhs_block);
+
+			if (options->debug) {
+				debug.add_inst(binary->lhs, br);
+			}
         }
 
         BasicBlock *lhs_block = irb->GetInsertBlock();
@@ -677,7 +734,12 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
     	irb->SetInsertPoint(rhs_block);
         rhs = irb->CreateIsNotNull(rhs);
 
-        irb->CreateBr(merge_block);
+		Instruction *br = irb->CreateBr(merge_block);
+
+		if (options->debug) {
+			debug.add_inst(binary, br);
+		}
+
         irb->SetInsertPoint(merge_block);
 
         PHINode *cmp = irb->CreatePHI(llvm_type, 2);
@@ -781,7 +843,7 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 	BasicBlock *entry_block = BasicBlock::Create(*llvm_context, "", fn);
 	irb->SetInsertPoint(entry_block);
 
-	if (b_debug) {
+	if (options->debug) {
 		debug.add_function(fun, fn);
 	}
 
@@ -792,9 +854,9 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 		Type *par_type = convert_type(par->type_info);
 		Value *var = lalloca(par_type);
 		par->llvm_reference = var;
-		store(&arg, var);
+		store(par, &arg, var);
 
-		if (b_debug) {
+		if (options->debug) {
 			debug.add_parameter(par->identifier, var, i, arg, irb->GetInsertBlock());
 		}
 
@@ -805,7 +867,11 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 
 	if (!irb->GetInsertBlock()->getTerminator()) {
 		if (fun->return_type->type == Ast_Type_Info::VOID) {
-			irb->CreateRetVoid();
+			Instruction *inst = irb->CreateRetVoid();
+
+			if (options->debug) {
+				debug.add_inst(fun, inst);
+			}
 		} else {
 			compiler->report_error(fun, "Non-void function needs a return");
 			return;
@@ -813,8 +879,20 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 	}
 }
 
+void LLVM_Converter::optimize() {
+	legacy::PassManager *pm = new legacy::PassManager();
+	PassManagerBuilder pmb;
+	pmb.OptLevel = 3;
+	pmb.SizeLevel = 0;
+	pmb.DisableUnrollLoops = false;
+	pmb.LoopVectorize = true;
+	pmb.SLPVectorize = true;
+	pmb.populateModulePassManager(*pm);
+	pm->run(*llvm_module);
+}
+
 void LLVM_Converter::emit_llvm_ir() {
-	if (b_debug) {
+	if (options->debug) {
 		debug.finalize();
 	}
 
@@ -826,20 +904,8 @@ void LLVM_Converter::emit_llvm_ir() {
 }
 
 void LLVM_Converter::emit_object_file() {
-	if (b_debug) {
+	if (options->debug) {
 		debug.finalize();
-	}
-
-	if (b_optimize) {
-		legacy::PassManager *pm = new legacy::PassManager();
-		PassManagerBuilder pmb;
-		pmb.OptLevel = 3;
-		pmb.SizeLevel = 0;
-		pmb.DisableUnrollLoops = false;
-		pmb.LoopVectorize = true;
-		pmb.SLPVectorize = true;
-		pmb.populateModulePassManager(*pm);
-		pm->run(*llvm_module);
 	}
 
 	std::string target_triple = llvm::sys::getDefaultTargetTriple();
@@ -911,37 +977,52 @@ Value *LLVM_Converter::lalloca(Type *ty) {
 	return lalloca;
 }
 
-Value *LLVM_Converter::load(Value *value) {
+Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 	Type *ty = value->getType()->getPointerElementType();
 	LoadInst *load = irb->CreateLoad(ty, value);
 	load->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+
+	if (options->debug) {
+		debug.add_inst(expr, load);
+	}
+
 	return load;
 }
 
-Value *LLVM_Converter::store(Value *value, Value *ptr) {
+Value *LLVM_Converter::store(Ast_Expression *expr, Value *value, Value *ptr) {
 	Type *ty = value->getType();
 	StoreInst *store = irb->CreateStore(value, ptr);
 	store->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+
+	if (options->debug) {
+		debug.add_inst(expr, store);
+	}
+
 	return store;
 }
 
-Value *LLVM_Converter::gep(llvm::Value *ptr, ArrayRef<Value *> idx_list) {
-	return irb->CreateInBoundsGEP(ptr->getType()->getPointerElementType(), ptr, idx_list);
+Value *LLVM_Converter::gep(Ast_Expression *expr, llvm::Value *ptr, ArrayRef<Value *> idx_list) {
+	Value *inst = irb->CreateInBoundsGEP(ptr->getType()->getPointerElementType(), ptr, idx_list);
+
+	if (options->debug) {
+		debug.add_inst(expr, static_cast<Instruction *>(inst));
+	}
+
+	return inst;
 }
 
 void DebugInfo::init(LLVM_Converter *converter, String entry_file) {
 	db = new DIBuilder(*converter->llvm_module);
-	file = db->createFile(STR_REF(entry_file), ".");
-	/* TODO: check entry file later -> break up into directory and file name */
-	cu = db->createCompileUnit(dwarf::DW_LANG_C, file, "", b_optimize, "", 0);
+	file = create_file(entry_file);
+
+	cu = db->createCompileUnit(dwarf::DW_LANG_C, file, "", converter->options->optimize, "", 0);
 	layout = &converter->llvm_module->getDataLayout();
 
 	converter->llvm_module->addModuleFlag(Module::Warning, "Debug Info Version", DEBUG_METADATA_VERSION);
 }
 
 void DebugInfo::add_function(Ast_Function *ast_func, Function *f) {
-	/* TODO: check entry file later -> break up into directory and file name */
-	DIFile *sp_file = db->createFile(STR_REF(ast_func->location.file), ".");
+	DIFile *sp_file = create_file(ast_func->location.file);
 
 	DINode::DIFlags flags;
 	if (f->getName() == "main") {
@@ -1002,6 +1083,7 @@ DIType *DebugInfo::convert_type(Type *type) {
 		}
 		case Type::IntegerTyID: {
 			IntegerType *int_type = dyn_cast<IntegerType>(type);
+			/* TODO: distinguish between signed and unsigned integer types */
 			return db->createBasicType("i" + std::to_string(int_type->getBitWidth()), int_type->getBitWidth(), dwarf::DW_ATE_unsigned);
 		}
 		case Type::FunctionTyID: {
@@ -1044,6 +1126,10 @@ DIType *DebugInfo::convert_type(Type *type) {
 
 	assert(0 && "Could not convert type to debug type");
 	return 0;
+}
+
+DIFile *DebugInfo::create_file(String file) {
+	return db->createFile(STR_REF(basename(file)), STR_REF(basepath(file)));
 }
 
 void DebugInfo::finalize() {

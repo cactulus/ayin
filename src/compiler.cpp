@@ -7,11 +7,21 @@
 
 #include <iostream>
 
+#ifdef _WIN32
+
+#include "microsoft_craziness.h"
+
+#define EXPORT __declspec(dllexport)
+#else
+#define EXPORT 
+#endif
+
 static String get_executable_path();
 
-const int MAX_PATH = 512;
+const int AYIN_MAX_PATH = 512;
 
-Compiler::Compiler() {
+Compiler::Compiler(CompileOptions options) {
+	this->options = options;
     llvm_converter = new LLVM_Converter(this);
 	global_scope = new Ast_Scope();
 	copier = new Copier(this);
@@ -65,14 +75,15 @@ Compiler::Compiler() {
 
 		exe_dir_path = basepath(exe_dir_path);
 	}
-	char stdlib_path_str[MAX_PATH];
-	snprintf(stdlib_path_str, MAX_PATH, "%.*sstdlib", ayin_path.length, ayin_path.data);
+	char stdlib_path_str[AYIN_MAX_PATH];
+	snprintf(stdlib_path_str, AYIN_MAX_PATH, "%.*sstdlib", ayin_path.length, ayin_path.data);
 
 	stdlib_path = copy_string(to_string(stdlib_path_str));
 }
 
-void Compiler::run(String entry_file) {
-	parse_file(entry_file);
+void Compiler::run() {
+	parse_file(options.input_file);
+
     if (errors_reported) return;
 
 	while (directives.length > 0) {
@@ -84,8 +95,8 @@ void Compiler::run(String entry_file) {
 			directives.ordered_remove(0);
 			break;
 		case Ast_Directive::USE:
-			char stdlib_path_str[MAX_PATH];
-			snprintf(stdlib_path_str,	MAX_PATH,
+			char stdlib_path_str[AYIN_MAX_PATH];
+			snprintf(stdlib_path_str, AYIN_MAX_PATH,
 				"%.*s/%.*s.ay", stdlib_path.length,
 				stdlib_path.data, directive->file.length,
 				directive->file.data);
@@ -102,11 +113,101 @@ void Compiler::run(String entry_file) {
 	typer->type_check_scope(global_scope);
     if (errors_reported) return;
 
-	llvm_converter->convert(entry_file, global_scope);
+	llvm_converter->convert(global_scope);
     if (errors_reported) return;
 
-	llvm_converter->emit_llvm_ir();
+	if (options.optimize) {
+		llvm_converter->optimize();
+	}
+
+	if (options.emit_llvm) {
+		llvm_converter->emit_llvm_ir();
+	}
+
 	llvm_converter->emit_object_file();
+
+	if (!options.compile_only) {
+		link_program();
+	}
+}
+
+#ifdef _WIN32
+#include "Windows.h"
+#endif
+
+void Compiler::link_program() {
+#ifdef _WIN32
+	auto win32_sdk = find_visual_studio_and_windows_sdk();
+
+	if (win32_sdk.vs_exe_path) {
+		const int LINE_SIZE = 4096;
+		char exe_path[LINE_SIZE];
+		char libpath[LINE_SIZE];
+
+		Array<String> args;
+
+		snprintf(exe_path, LINE_SIZE, "%S\\link.exe", win32_sdk.vs_exe_path);
+		args.add(to_string(exe_path));
+
+		if (win32_sdk.vs_library_path) {
+
+			snprintf(libpath, LINE_SIZE, "/libpath:%S", win32_sdk.vs_library_path);
+			args.add(copy_string(to_string(libpath)));
+		}
+
+		if (win32_sdk.windows_sdk_um_library_path) {
+			snprintf(libpath, LINE_SIZE, "/libpath:%S", win32_sdk.windows_sdk_um_library_path);
+			args.add(copy_string(to_string(libpath)));
+		}
+
+		if (win32_sdk.windows_sdk_ucrt_library_path) {
+			snprintf(libpath, LINE_SIZE, "/libpath:%S", win32_sdk.windows_sdk_ucrt_library_path);
+			args.add(copy_string(to_string(libpath)));
+		}
+
+		args.add(to_string("/NODEFAULTLIB:libcmt"));
+		args.add(to_string("msvcrt.lib"));
+		args.add(to_string("/nologo"));
+		args.add(to_string("/DEBUG"));
+		args.add(to_string("output.o"));
+
+		char executable_name[LINE_SIZE];
+		snprintf(executable_name, LINE_SIZE, "/OUT:%.*s.exe", options.output_file.length, options.output_file.data);
+		convert_to_back_slashes(executable_name + 1);
+
+		args.add(to_string(executable_name));
+
+		auto cmd_line = get_command_line(&args);
+		printf("Linker command: %s\n", cmd_line);
+
+		// system((char *)cmd_line);
+		STARTUPINFOA startup;
+		memset(&startup, 0, sizeof(STARTUPINFOA));
+		startup.cb = sizeof(STARTUPINFOA);
+		startup.dwFlags = 0x00000100;
+		startup.hStdInput = GetStdHandle(((DWORD)-10));
+		startup.hStdOutput = GetStdHandle(((DWORD)-11));
+		startup.hStdError = GetStdHandle(((DWORD)-12));
+
+		PROCESS_INFORMATION process_info;
+		CreateProcessA(nullptr, (char *)cmd_line, nullptr, nullptr, 1, 0, nullptr, nullptr, &startup, &process_info);
+		WaitForSingleObject(process_info.hProcess, 0xFFFFFFFF);
+
+		remove("output.o");
+	}
+	#else
+	// @Incomplete should use the execpve family
+	Array<String> args;
+	args.add(to_string("ld"));
+	args.add(to_string("output.o"));
+
+	args.add(to_string("-o"));
+	args.add(compiler->executable_name);
+
+	auto cmd_line = get_command_line(&args);
+	printf("Linker command: %s\n", cmd_line);
+	system((char *)cmd_line);
+	#endif
 }
 
 void Compiler::parse_file(String file_path) {
@@ -132,6 +233,31 @@ void Compiler::parse_file(String file_path) {
 	Parser parser(this, &lexer);
 	parser.current_scope = global_scope;
 	parser.parse();
+}
+
+
+u8 *Compiler::get_command_line(Array<String> *strings) {
+	s64 total_length = 0;
+
+	for (String s : *strings) total_length += s.length;
+
+	total_length += strings->length * 3 + 1;
+
+	s64 cursor = 0;
+	u8 *final = reinterpret_cast<u8 *>(malloc(total_length));
+
+	for (String s : *strings) {
+		final[cursor++] = '\"';
+
+		memcpy(final + cursor, s.data, s.length);
+		cursor += s.length;
+
+		final[cursor++] = '\"';
+		final[cursor++] = ' ';
+	}
+
+	final[cursor++] = 0;
+	return final;
 }
 
 Ast_Type_Info *make_int_type(bool is_signed, s32 bytes) {
@@ -295,7 +421,6 @@ void Compiler::report_error(Ast *ast, const char *fmt, ...) {
 
 #ifdef _WIN32
 
-#include <windows.h>
 #include <shlwapi.h>
 
 #pragma comment(lib, "shlwapi.lib") 
@@ -331,11 +456,3 @@ String get_executable_path() {
 #include <sys/stat.h>
 
 #endif
-
-int main(int argc, char *argv[]) {
-	Compiler compiler;
-
-	compiler.run(to_string("examples/example.ay"));
-
-	return 0;
-}
