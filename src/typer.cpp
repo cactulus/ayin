@@ -219,6 +219,12 @@ void Typer::type_check_statement(Ast_Expression *stmt) {
 }
 
 void Typer::type_check_variable_declaration(Ast_Declaration *decl) {
+	Ast_Expression *existing = find_declaration_in_scope(decl->identifier->scope, decl->identifier);
+	if (existing && existing != decl) {
+		compiler->report_error2(decl->identifier->location, "Identifier is already defined", existing->location, "First definition here");
+		return;
+	}
+
 	if (decl->type_info) {
 		Ast_Type_Info *new_type = resolve_type_info(decl->type_info);
 		
@@ -312,7 +318,11 @@ void Typer::infer_type(Ast_Expression *expression) {
 				return;
 			}
 
-			id->type_info = decl->type_info;
+			if (decl->type == Ast_Expression::FUNCTION) {
+				id->type_info = make_pointer_type(decl->type_info);
+			} else {
+				id->type_info = decl->type_info;
+			}
 		} break;
 		case Ast_Expression::CAST: {
 			Ast_Cast *cast = static_cast<Ast_Cast *>(expression);
@@ -339,12 +349,23 @@ void Typer::infer_type(Ast_Expression *expression) {
 				return;
 			}
 
-			if (decl->type != Ast::FUNCTION) {
-				compiler->report_error(call->identifier, "Symbol is not a function");
-				return;
-			}
+			Ast_Function *function;
 
-			Ast_Function *function = static_cast<Ast_Function *>(decl);
+			if (decl->type == Ast::FUNCTION) {
+				function = static_cast<Ast_Function *>(decl);
+			} else {
+				infer_type(call->identifier);
+
+				auto cit = call->identifier->type_info;
+
+				if (type_is_pointer(cit) && type_is_function(cit->element_type) && cit->element_type->resolved_function) {
+					function = cit->element_type->resolved_function;
+					call->by_function_pointer = true;
+				} else {
+					compiler->report_error(call->identifier, "Symbol is not a function");
+					return;
+				}
+			}
 
 			if (function->flags & FUNCTION_TEMPLATE) {
 				function = get_polymorph_function(call, function);
@@ -1006,6 +1027,42 @@ Ast_Expression *Typer::make_compare_zero(Ast_Expression *target) {
 	be->op = Token::NOT_EQ;
 	be->type_info = compiler->type_bool;
 	return be;
+}
+
+Ast_Expression *Typer::find_declaration_in_scope(Ast_Scope *scope, Ast_Identifier *id) {
+	Atom *name = id->atom;
+
+	for (auto decl : scope->declarations) {
+		switch (decl->type) {
+		case Ast::STRUCT: {
+			auto strct = static_cast<Ast_Struct *>(decl);
+			if (strct->identifier->atom == name)
+				return decl;
+		} break;
+		case Ast::TYPE_ALIAS: {
+			auto ta = static_cast<Ast_Type_Alias *>(decl);
+			if (ta->identifier->atom == name)
+				return decl;
+		} break;
+		case Ast::DECLARATION: {
+			auto var_decl = static_cast<Ast_Declaration *>(decl);
+			if (var_decl->identifier->atom == name)
+				return decl;
+		} break;
+		case Ast::FUNCTION: {
+			auto fun = static_cast<Ast_Function *>(decl);
+			if (fun->identifier->atom == name)
+				return decl;
+		} break;
+		case Ast::ENUM: {
+			auto e = static_cast<Ast_Enum *>(decl);
+			if (e->identifier->atom == name)
+				return decl;
+		} break;
+		}
+	}
+
+	return 0;
 }
 
 Ast_Literal *Typer::make_integer_literal(s64 value, Ast_Type_Info *type_info, Ast *source_loc) {

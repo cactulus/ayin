@@ -81,13 +81,9 @@ struct Ast_Directive : Ast_Expression {
 	enum Directive_Type : u32 {
 		INCLUDE,
 		USE,
-		IF,
 	};
 
 	Directive_Type directive_type;
-	Ast_Expression *condition = 0;
-	Ast_Expression *then_stmt = 0;
-	Ast_Expression *else_stmt = 0;
 	String file;
 
 	Ast_Directive() {
@@ -144,6 +140,8 @@ struct Ast_Type_Info {
 
 	Array<Ast_Type_Info *> parameters;
 	Ast_Type_Info *return_type;
+	/* TODO: maybe move to Ast_Identifier later */
+	Ast_Function *resolved_function = 0;
 
 	bool is_signed = false;
 	bool is_dynamic = false;
@@ -245,7 +243,7 @@ struct Ast_Binary : Ast_Expression {
 };
 
 struct Ast_Identifier : Ast_Expression {
-	Atom *atom;
+	Atom *atom = 0;
 	Ast_Scope *scope = 0;
 
 	Ast_Identifier() {
@@ -313,6 +311,7 @@ struct Ast_Call : Ast_Expression {
 	Ast_Identifier *identifier;
 	Array<Ast_Expression *> arguments;
 	Ast_Function *resolved_function = 0;
+	bool by_function_pointer = false;
 
 	Ast_Call() {
 		type = Ast::CALL;
@@ -387,6 +386,10 @@ inline bool type_is_float(Ast_Type_Info *type_info) {
 
 inline bool type_is_pointer(Ast_Type_Info *type_info) {
 	return type_info->type == Ast_Type_Info::POINTER;
+}
+
+inline bool type_is_function(Ast_Type_Info *type_info) {
+	return type_info->type == Ast_Type_Info::FUNCTION;
 }
 
 inline bool type_is_string(Ast_Type_Info *type_info) {

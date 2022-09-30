@@ -109,6 +109,7 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 			auto old = static_cast<Ast_Call *>(ast);
 			auto _new = COPY_NEW(Ast_Call);
 
+			COPY_F(by_function_pointer);
 			COPY_C(identifier);
 			COPY_ARRAY(arguments);
 
@@ -212,9 +213,6 @@ Ast_Expression *Copier::copy(Ast_Expression *ast) {
 			auto _new = COPY_NEW(Ast_Directive);
 
 			COPY_F(directive_type);
-			COPY_C(condition);
-			COPY_C(then_stmt);
-			COPY_C(else_stmt);
 			COPY_F(file);
 
 			return _new;

@@ -403,17 +403,23 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 			Ast_Identifier *id = static_cast<Ast_Identifier *>(expression);
 
 			auto declaration = find_declaration_by_id(id);
-			// no need to check if found because we already do that in the type checking phase 
+			Value *ref;
+			
+			if (declaration->type == Ast_Expression::DECLARATION) {
+				auto decl = static_cast<Ast_Declaration *>(declaration);
+				
+				ref = decl->llvm_reference;
 
-			/* safe cast for now */
-			auto decl = static_cast<Ast_Declaration *>(declaration);
+				if (is_lvalue) {
+					return ref;
+				}
+				return load(id, ref);
+			} else {
+				auto fn = static_cast<Ast_Function *>(declaration);
 
-			Value *ref = decl->llvm_reference;
-
-			if (is_lvalue) {
+				ref = fn->llvm_reference;
 				return ref;
 			}
-			return load(id, ref);
 		}
 		case Ast_Expression::CAST: {
 			Ast_Cast *cast = static_cast<Ast_Cast *>(expression);
@@ -464,20 +470,29 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 		}
 		case Ast::CALL: {
 			Ast_Call *call = static_cast<Ast_Call *>(expression);
-			Function *fun = get_or_create_function(call->resolved_function);
 			Array<Value *> arguments;
 			
 			for (auto arg : call->arguments) {
 				arguments.add(convert_expression(arg));
 			}
 
-			Instruction *inst = irb->CreateCall(fun, ArrayRef<Value *>(arguments.data, arguments.length));
+			Instruction *call_inst;
+			if (call->by_function_pointer) {
+				auto declaration = find_declaration_by_id(call->identifier);
+				Ast_Declaration *decl = static_cast<Ast_Declaration *>(declaration);
 
-			if (options->debug) {
-				debug.add_inst(expression, inst);
+				auto loaded = load(decl, decl->llvm_reference);
+				call_inst = irb->CreateCall(loaded, ArrayRef<Value *>(arguments.data, arguments.length));
+			} else {
+				Function *fun = get_or_create_function(call->resolved_function);
+				call_inst = irb->CreateCall(fun, ArrayRef<Value *>(arguments.data, arguments.length));
 			}
 
-			return inst;
+			if (options->debug) {
+				debug.add_inst(expression, call_inst);
+			}
+
+			return call_inst;
 		}
 		case Ast::BINARY: {
 			Ast_Binary *binary = static_cast<Ast_Binary *>(expression);
@@ -980,7 +995,7 @@ Value *LLVM_Converter::lalloca(Type *ty) {
 Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 	Type *ty = value->getType()->getPointerElementType();
 	LoadInst *load = irb->CreateLoad(ty, value);
-	load->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	//load->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
 
 	if (options->debug) {
 		debug.add_inst(expr, load);
@@ -992,7 +1007,7 @@ Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 Value *LLVM_Converter::store(Ast_Expression *expr, Value *value, Value *ptr) {
 	Type *ty = value->getType();
 	StoreInst *store = irb->CreateStore(value, ptr);
-	store->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	// store->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
 
 	if (options->debug) {
 		debug.add_inst(expr, store);

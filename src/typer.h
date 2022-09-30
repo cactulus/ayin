@@ -41,6 +41,8 @@ struct Typer {
 
 	Ast_Expression *make_compare_zero(Ast_Expression *target);
 
+	Ast_Expression *find_declaration_in_scope(Ast_Scope *scope, Ast_Identifier *id);
+
 	Ast_Literal *make_integer_literal(s64 value, Ast_Type_Info *type_info, Ast *source_loc=0);
 	Ast_Identifier *make_identifier(Atom *name);
 	Ast_Member *make_member(Ast_Expression *aggregate_expression, Atom *field);

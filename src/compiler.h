@@ -56,6 +56,7 @@ struct Compiler {
 	Atom *atom_it_index;
 
 	Array<Ast_Directive *> directives;
+	Array<String> definitions;
 
 	String stdlib_path;
 
@@ -71,9 +72,13 @@ struct Compiler {
 
 	u8 *get_command_line(Array<String> *strings);
 
+	void report_error_base(Source_Location loc, const char *msg);
+	void report_error2(Source_Location loc1, const char *msg1, Source_Location loc2, const char *msg2);
 	void report_error(Source_Location location, const char *fmt, va_list args);
 	void report_error(Token *token, const char *fmt, ...);
 	void report_error(Ast *ast, const char *fmt, ...);
+
+	String get_line(Source_Location location);
 };
 
 Ast_Type_Info *make_int_type(bool is_signed, s32 bytes);

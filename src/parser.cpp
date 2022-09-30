@@ -209,6 +209,9 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 		compiler->report_error(peek(), "Expected '(' after function name");
 	}
 
+	Ast_Type_Info *func_type = new Ast_Type_Info();
+	func_type->type = Ast_Type_Info::FUNCTION;
+
 	push_scope();
 	fn->parameter_scope = current_scope;
 	while (!expect_eat(')')) {
@@ -223,6 +226,7 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 		}
 
 		current_scope->declarations.add(par_decl);
+		func_type->parameters.add(par_decl->type_info);
 
 		if (!expect(')')) {
 			if (!expect_eat(',')) {
@@ -248,6 +252,8 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 			compiler->report_error(peek(), "Expected ';' after return type specifier");
 		}
 	}
+
+	func_type->return_type = fn->return_type;
 
 	if (!is_extern) {
 		push_scope();
@@ -287,6 +293,8 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 		pop_scope();
 	}
 
+	func_type->resolved_function = fn;
+	fn->type_info = func_type;
 	return fn;
 }
 
@@ -330,7 +338,7 @@ void Parser::parse_variable_declaration_base(Ast_Declaration *var_decl) {
 	}
 }
 
-Ast_Directive *Parser::parse_directive() {
+Ast_Expression *Parser::parse_directive() {
 	Ast_Directive *directive = AST_NEW(Ast_Directive);
 
 	auto id = next();
@@ -366,8 +374,43 @@ Ast_Directive *Parser::parse_directive() {
 			directive->file = copy_string(to_string(fullname));
 		}
 	} else if (id->type == Token::IF) {
-		directive->directive_type = Ast_Directive::IF;
+		auto cond = next();
 
+		if (cond->type == Token::ATOM) {
+			Ast_Expression *if_case = parse_declaration_or_statement();
+			Ast_Expression *else_case = 0;
+
+			if (peek()->type == '#' &&
+				peek(1)->type == Token::ATOM &&
+				peek(1)->lexeme == to_string("else")) {
+
+				next();
+				next();
+
+				else_case = parse_declaration_or_statement();
+			}
+
+			bool cond_true = false;
+
+			for (auto def : compiler->definitions) {
+				if (def == cond->lexeme) {
+					cond_true;
+					break;
+				}
+			}
+
+			if (cond_true) {
+				return if_case;
+			} else {
+				if (else_case) {
+					return else_case;
+				}
+				return parse_declaration_or_statement();
+			}
+		} else {
+			compiler->report_error(cond, "Expected identifier after #if");
+			return 0;
+		}
 	}
 
 	compiler->directives.add(directive);

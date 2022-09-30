@@ -343,11 +343,65 @@ Atom *Compiler::make_atom(String name) {
 	return atom;
 }
 
-void Compiler::report_error(Source_Location location, const char *fmt, va_list args) {
-	printf("ayin: \"%.*s\"(%lld:%lld): ", location.file.length, location.file.data, location.line + 1, location.col + 1);
-	vprintf(fmt, args);
-    printf("\n");
+void Compiler::report_error_base(Source_Location loc, const char *msg) {
+	printf("ayin: \"%.*s\"(%lld:%lld): ", loc.file.length, loc.file.data, loc.line + 1, loc.col + 1);
+	printf(msg);
+	printf("\n");
 
+	String source_line = get_line(loc);
+
+	printf("%.*s\n", source_line.length, source_line.data);
+
+	for (s32 i = 0; i < loc.col; ++i) {
+		if (isspace(source_line[i])) {
+			putc(source_line[i], stdout);
+		} else {
+			putc(' ', stdout);
+		}
+	}
+
+	for (s32 i = 0; i < loc.length; ++i) {
+		putc('*', stdout);
+	}
+
+	puts("\n");
+}
+
+void Compiler::report_error2(Source_Location loc1, const char *msg1, Source_Location loc2, const char *msg2) {
+	report_error_base(loc1, msg1);
+	report_error_base(loc2, msg2);
+
+	errors_reported++;
+}
+
+void Compiler::report_error(Source_Location location, const char *fmt, va_list args) {
+	char error[512];
+	vsprintf_s(error, 512, fmt, args);
+
+	report_error_base(location, error);
+
+	errors_reported++;
+}
+
+void Compiler::report_error(Token *token, const char *fmt, ...) {
+	va_list args;
+    va_start(args, fmt);
+    
+    report_error(token->location, fmt, args);
+    va_end(args);
+
+}
+
+void Compiler::report_error(Ast *ast, const char *fmt, ...) {
+	va_list args;
+    va_start(args, fmt);
+    
+    report_error(ast->location, fmt, args);
+    va_end(args);
+}
+
+
+String Compiler::get_line(Source_Location location) {
 	String source;
 	for (int i = 0; i < source_table_files.length; ++i) {
 		if (source_table_files[i] == location.file) {
@@ -379,44 +433,7 @@ void Compiler::report_error(Source_Location location, const char *fmt, va_list a
 		line_length++;
 	}
 
-	String source_line = source.substring(line_start, line_length - 1);
-	
-	printf("%.*s\n", source_line.length, source_line.data);
-
-	for (s32 i = 0; i < location.col; ++i) {
-		if (isspace(source_line[i])) {
-			putc(source_line[i], stdout);
-		} else {
-			putc(' ', stdout);
-		}
-	}
-
-	for (s32 i = 0; i < location.length; ++i) {
-		putc('*', stdout);
-	}
-
-	puts("\n");
-
-	errors_reported++;
-
-	/* TODO: Remove at some time */
-	exit(1);
-}
-
-void Compiler::report_error(Token *token, const char *fmt, ...) {
-	va_list args;
-    va_start(args, fmt);
-    
-    report_error(token->location, fmt, args);
-    va_end(args);
-}
-
-void Compiler::report_error(Ast *ast, const char *fmt, ...) {
-	va_list args;
-    va_start(args, fmt);
-    
-    report_error(ast->location, fmt, args);
-    va_end(args);
+	return source.substring(line_start, line_length - 1);
 }
 
 #ifdef _WIN32
