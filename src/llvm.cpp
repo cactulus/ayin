@@ -825,7 +825,7 @@ Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
         
         Type *return_type = convert_type(type_info->return_type);
         
-        return FunctionType::get(return_type, ArrayRef<Type *>(arg_types.data, arg_types.length), false);
+        return FunctionType::get(return_type, ArrayRef<Type *>(arg_types.data, arg_types.length), false)->getPointerTo();
 	}
 
 	if (type_info->type == Ast_Type_Info::ARRAY) {
@@ -995,7 +995,7 @@ Value *LLVM_Converter::lalloca(Type *ty) {
 Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 	Type *ty = value->getType()->getPointerElementType();
 	LoadInst *load = irb->CreateLoad(ty, value);
-	//load->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	load->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
 
 	if (options->debug) {
 		debug.add_inst(expr, load);
@@ -1007,7 +1007,7 @@ Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 Value *LLVM_Converter::store(Ast_Expression *expr, Value *value, Value *ptr) {
 	Type *ty = value->getType();
 	StoreInst *store = irb->CreateStore(value, ptr);
-	// store->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	store->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
 
 	if (options->debug) {
 		debug.add_inst(expr, store);

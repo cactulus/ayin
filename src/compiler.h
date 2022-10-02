@@ -78,6 +78,8 @@ struct Compiler {
 	void report_error(Token *token, const char *fmt, ...);
 	void report_error(Ast *ast, const char *fmt, ...);
 
+	void init_definitions();
+
 	String get_line(Source_Location location);
 };
 

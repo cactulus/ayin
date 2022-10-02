@@ -79,6 +79,8 @@ Compiler::Compiler(CompileOptions options) {
 	snprintf(stdlib_path_str, AYIN_MAX_PATH, "%.*sstdlib", ayin_path.length, ayin_path.data);
 
 	stdlib_path = copy_string(to_string(stdlib_path_str));
+
+	init_definitions();
 }
 
 void Compiler::run() {
@@ -235,6 +237,20 @@ void Compiler::parse_file(String file_path) {
 	parser.parse();
 }
 
+void Compiler::init_definitions() {
+#if defined(_WIN64)
+	definitions.add(to_string("win64"));
+	definitions.add(to_string("win32"));
+#elif defined(_WIN32)
+	definitions.add(to_string("win32"));
+#elif defined(__APPLE__) || defined(__MACH__)
+	definitions.add(to_string("unix"));
+	definitions.add(to_string("macos"));
+#elif defined(__linux__)
+	definitions.add(to_string("unix"));
+	definitions.add(to_string("linux"));
+#endif
+}
 
 u8 *Compiler::get_command_line(Array<String> *strings) {
 	s64 total_length = 0;

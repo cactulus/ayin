@@ -293,7 +293,6 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 		pop_scope();
 	}
 
-	func_type->resolved_function = fn;
 	fn->type_info = func_type;
 	return fn;
 }
@@ -394,7 +393,7 @@ Ast_Expression *Parser::parse_directive() {
 
 			for (auto def : compiler->definitions) {
 				if (def == cond->lexeme) {
-					cond_true;
+					cond_true = true;
 					break;
 				}
 			}
@@ -923,6 +922,35 @@ Ast_Type_Info *Parser::parse_type_specifier() {
 		type_info->is_dynamic = dynamic;
 		type_info->array_size = arr_size; 
 		type_info->element_type = element_type;
+		return type_info;
+	}
+
+	if (t->type == '(') {
+		next();
+
+		type_info = new Ast_Type_Info();
+		type_info->type = Ast_Type_Info::FUNCTION;
+
+		while (!expect_eat(')')) {
+			Ast_Type_Info *par_type = parse_type_specifier();
+			if (!par_type) {
+				compiler->report_error(peek(), "Expected type");
+				return 0;
+			}
+
+			type_info->parameters.add(par_type);
+
+			if (!expect(')')) {
+				if (!expect_eat(',')) {
+					compiler->report_error(peek(), "Expected ',' after parameter type");
+				}
+			}
+		}
+
+		type_info->return_type = parse_type_specifier();
+		if (!type_info->return_type)
+			compiler->report_error(peek(), "Expected return type");
+
 		return type_info;
 	}
 

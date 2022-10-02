@@ -23,6 +23,8 @@ struct Typer {
 	void infer_type(Ast_Expression *expression);
 	Ast_Type_Info *resolve_type_info(Ast_Type_Info *type_info);
 
+	bool compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *args, Array<Ast_Type_Info *> par_types, bool varags);
+
 	Ast_Expression *check_expression_type_and_cast(Ast_Expression *expression, Ast_Type_Info *other_type);
 
 	Ast_Cast *make_cast(Ast_Expression *expression, Ast_Type_Info *target_type);

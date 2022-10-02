@@ -175,6 +175,7 @@ void Typer::type_check_statement(Ast_Expression *stmt) {
 					Ast_Declaration *decl = new Ast_Declaration();
 					copy_location_info(decl, _for);
 					decl->identifier = make_identifier(compiler->atom_it);
+					decl->identifier->scope = _for->iterator_declaration_scope;
 					copy_location_info(decl->identifier, decl);
 					decl->initializer = indexed;
 					decl->type_info = indexed->type_info;
@@ -319,7 +320,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 			}
 
 			if (decl->type == Ast_Expression::FUNCTION) {
-				id->type_info = make_pointer_type(decl->type_info);
+				id->type_info = decl->type_info;
 			} else {
 				id->type_info = decl->type_info;
 			}
@@ -358,8 +359,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 
 				auto cit = call->identifier->type_info;
 
-				if (type_is_pointer(cit) && type_is_function(cit->element_type) && cit->element_type->resolved_function) {
-					function = cit->element_type->resolved_function;
+				if (type_is_function(cit)) {
 					call->by_function_pointer = true;
 				} else {
 					compiler->report_error(call->identifier, "Symbol is not a function");
@@ -367,45 +367,25 @@ void Typer::infer_type(Ast_Expression *expression) {
 				}
 			}
 
-			if (function->flags & FUNCTION_TEMPLATE) {
-				function = get_polymorph_function(call, function);
-				call->type_info = function->return_type;
-				call->resolved_function = function;
-			} else {
-				call->type_info = function->return_type;
-				call->resolved_function = function;
+			if (call->by_function_pointer) {
+				auto cit = call->identifier->type_info;
 
-				auto par_count = function->parameter_scope->declarations.length;
+				/* TODO: allow template functions and varargs for function pointers */
+				call->type_info = cit->return_type;
 
-				if (par_count > call->arguments.length) {
-					compiler->report_error(call->identifier, "Arguments count does not match parameter count");
+				if (!compare_arguments(call->identifier, &call->arguments, cit->parameters, false)) {
 					return;
 				}
+			} else {
+				if (function->flags & FUNCTION_TEMPLATE) {
+					function = get_polymorph_function(call, function);
+					call->type_info = function->return_type;
+					call->resolved_function = function;
+				} else {
+					call->type_info = function->return_type;
+					call->resolved_function = function;
 
-				for (int i = 0; i < call->arguments.length; ++i) {
-					if (i >= par_count) {
-						if (function->flags & FUNCTION_VARARG) {
-							infer_type(call->arguments[i]);
-							continue;
-						} else {
-							compiler->report_error(call->identifier, "Arguments count does not match parameter count");
-							return;
-						} 
-					}
-
-					infer_type(call->arguments[i]);
-
-					Ast_Type_Info *par_type = function->parameter_scope->declarations[i]->type_info;
-
-					call->arguments[i] = check_expression_type_and_cast(call->arguments[i], par_type);
-					Ast_Type_Info *arg_type = call->arguments[i]->type_info;
-
-					if (!types_match(arg_type, par_type)) {
-						compiler->report_error(
-								call->arguments[i],
-								"Type of %d. parameter does not match type in function declaration",
-								i
-								);
+					if (!compare_arguments(call->identifier, &call->arguments, function->type_info->parameters, function->flags & FUNCTION_VARARG)) {
 						return;
 					}
 				}
@@ -730,6 +710,45 @@ Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 	return type_info;
 }
 
+bool Typer::compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *args, Array<Ast_Type_Info *> par_types, bool varags) {
+	auto par_count = par_types.length;
+
+	if (par_count > args->length) {
+		compiler->report_error(call, "Arguments count does not match parameter count");
+		return false;
+	}
+
+	for (int i = 0; i < args->length; ++i) {
+		if (i >= par_count) {
+			if (varags) {
+				infer_type((*args)[i]);
+				continue;
+			} else {
+				compiler->report_error(call, "Arguments count does not match parameter count");
+				return false;
+			}
+		}
+
+		infer_type((*args)[i]);
+
+		Ast_Type_Info *par_type = par_types[i];
+
+		(*args)[i] = check_expression_type_and_cast((*args)[i], par_type);
+		Ast_Type_Info *arg_type = (*args)[i]->type_info;
+
+		if (!types_match(arg_type, par_type)) {
+			compiler->report_error(
+				(*args)[i],
+				"Type of %d. parameter does not match type in function declaration",
+				i
+			);
+			return false;
+		}
+	}
+
+	return true;
+}
+
 Ast_Expression *Typer::check_expression_type_and_cast(Ast_Expression *expression, Ast_Type_Info *other_type) {
 	auto rtype = expression->type_info;
 	auto ltype = other_type;
@@ -901,6 +920,19 @@ bool Typer::types_match(Ast_Type_Info *t1, Ast_Type_Info *t2) {
     		t1->array_size == t2->array_size &&
     		t1->is_dynamic == t2->is_dynamic;
     }
+
+	if (t1->type == Ast_Type_Info::FUNCTION) {
+		if (!types_match(t1->return_type, t2->return_type)) return false;
+		if (t1->parameters.length != t2->parameters.length) return false;
+
+		for (int i = 0; i < t1->parameters.length; ++i) {
+			if (!types_match(t1->parameters[i], t2->parameters[i])) {
+				return false;
+			}
+		}
+
+		return true;
+	}
     
     return t1->size == t2->size;
 }
@@ -981,6 +1013,15 @@ void Typer::mangle_type(String_Builder *builder, Ast_Type_Info *type) {
 
 			for (auto mem : type->struct_members) {
 				mangle_type(builder, mem);
+			}
+		} break;
+		case Ast_Type_Info::FUNCTION: {
+			builder->putchar('F');
+			mangle_type(builder, type->return_type);
+
+			builder->putchar('_');
+			for (auto par : type->parameters) {
+				mangle_type(builder, par);
 			}
 		} break;
 		case Ast_Type_Info::ARRAY: {
