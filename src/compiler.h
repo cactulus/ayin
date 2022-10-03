@@ -25,13 +25,16 @@ struct Compiler {
 	Copier *copier;
 	Typer *typer;
 
+	/* default scope */
 	Ast_Scope *global_scope;
 
+	/* source file management for error reporting */
 	Array<String> source_table_files;
 	Array<String> source_table_contents;
 	Atom_Table atom_table;
 	s32 errors_reported = 0;
 
+	/* primitive type definitions */
 	Ast_Type_Info *type_string;
 	Ast_Type_Info *type_string_data;
 	Ast_Type_Info *type_void;
@@ -83,6 +86,7 @@ struct Compiler {
 	String get_line(Source_Location location);
 };
 
+/* helper functions to create types */
 Ast_Type_Info *make_int_type(bool is_signed, s32 bytes);
 Ast_Type_Info *make_float_type(s32 bytes);
 Ast_Type_Info *make_pointer_type(Ast_Type_Info *element_type);

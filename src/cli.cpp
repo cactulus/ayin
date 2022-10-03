@@ -1,16 +1,4 @@
-#include <string>
-
 #include "compiler.h"
-
-
-static String convert_string(std::string str) {
-	String string;
-
-	string.data = strdup(str.c_str());
-	string.length = str.length();
-
-	return string;
-}
 
 static void print_help() {
 	printf("usage: ayin <FILE>\n");
@@ -22,10 +10,11 @@ static void print_help() {
 	printf("\t-release\tOptimized release build\n");
 }
 
+/*
+* parses command line input and fills in the CompileOptions
+* then runs the compiler with those options
+*/
 int main(int argc, char **argv) {
-	/* TODO: replace with own CLI parsing so we don't use std::string */
-	
-
 	CompileOptions options;
 	options.input_file = to_string("");
 	options.output_file = to_string("main");

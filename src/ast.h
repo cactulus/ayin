@@ -76,6 +76,12 @@ struct Ast_Expression : Ast {
 	Ast_Type_Info *type_info = 0;
 };
 
+/*
+* Equivalent of a C++ preprocessor directive
+* #include  -> includes local file
+* #use      -> includes file from library path
+* #if/#else -> static/compile-time if for conditional code compilation
+*/
 struct Ast_Directive : Ast_Expression {
 
 	enum Directive_Type : u32 {
@@ -91,6 +97,10 @@ struct Ast_Directive : Ast_Expression {
 	}
 };
 
+/*
+* Represents a scope in the program
+* Default scope is the global scope, which has a parent of null
+*/
 struct Ast_Scope : Ast_Expression {
 	Ast_Scope() { 
 		type = Ast::SCOPE;
@@ -103,6 +113,13 @@ struct Ast_Scope : Ast_Expression {
 };
 
 struct Ast_Type_Info {
+
+	/*
+	* Unresolved -> a non-primitive type name that cannot be resolved during the parsing stage,
+	*				but is being resolved in the semantic analysis
+	* 
+	* Type		 -> type is used in type aliases and marks a generic type
+	*/
 	enum Base_Type : u32 {
 		UNRESOLVED = 0,
 
@@ -129,31 +146,39 @@ struct Ast_Type_Info {
 
 	Base_Type type;
 
+	/* element type is used by the pointer and array type */
 	Ast_Type_Info *element_type = 0;
 	Ast_Identifier *unresolved_name;
 
+	/* element count for static arrays */
 	s32 array_size = 0;
 
 	Ast_Struct *struct_decl;
 	Array<Ast_Type_Info *> struct_members;
 	Array<Enum_Member> enum_members;
 
+	/* function type */
 	Array<Ast_Type_Info *> parameters;
 	Ast_Type_Info *return_type;
 
+	/* integer type */
 	bool is_signed = false;
+	/* is dynamic array */
 	bool is_dynamic = false;
 
 	/* size in bytes for int and float */
 	s32 size = 0;
 };
 
+/* Variable declaration flags */
 const u8 VAR_GLOBAL = 0x1;
 const u8 VAR_CONSTANT = 0x2;
 
 struct Ast_Declaration : Ast_Expression {
+	/* llvm_reference is set in the llvm code generation stage */
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
+	/* Initializer not null for defintions, null for declarations */
 	Ast_Expression *initializer = 0;
 	u8 flags = 0;
 
@@ -162,11 +187,17 @@ struct Ast_Declaration : Ast_Expression {
 	}
 };
 
+/*
+* Function declaration flags
+* Only external functions can have a variable length parameter
+* Extern functions can not be template functions
+*/
 const u8 FUNCTION_EXTERNAL = 0x1;
 const u8 FUNCTION_TEMPLATE = 0x2;
 const u8 FUNCTION_VARARG = 0x4;
 
 struct Ast_Function : Ast_Expression {
+	/* llvm_reference is set in the llvm code generation stage */
 	llvm::Value *llvm_reference = 0;
 	Ast_Identifier *identifier = 0;
 

@@ -647,6 +647,10 @@ void Typer::infer_type(Ast_Expression *expression) {
 	}
 }
 
+/*
+* resolves the types that could not be resolved during the parsing stage
+* (mainly user defined types such as structs)
+*/
 Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 	if (type_is_pointer(type_info) || type_is_array(type_info)) {
 		Ast_Type_Info *current = type_info;
@@ -710,6 +714,11 @@ Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 	return type_info;
 }
 
+/*
+* compares the types of the arguments of a function call to the types in the function declaration
+* returns true if they are compatible (with implicit type conversion)
+* returns false if they are incompatible
+*/
 bool Typer::compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *args, Array<Ast_Type_Info *> par_types, bool varags) {
 	auto par_count = par_types.length;
 
@@ -749,6 +758,15 @@ bool Typer::compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *arg
 	return true;
 }
 
+/*
+* compares the type of an expression to a desired type
+* If they don't match, it tries implicit type conversion
+* It returns the original expression if the types match
+* or the Ast_Cast expression if it converted the type implictly
+
+* This function does not guarantee that types are compatible even after implicit type conversion
+* Is is the callers responsibility to check if the types match in the end
+*/
 Ast_Expression *Typer::check_expression_type_and_cast(Ast_Expression *expression, Ast_Type_Info *other_type) {
 	auto rtype = expression->type_info;
 	auto ltype = other_type;
@@ -788,6 +806,11 @@ Ast_Cast *Typer::make_cast(Ast_Expression *expression, Ast_Type_Info *target_typ
 	return cast;
 }
 
+/*
+* Checks if a template functions has already been polymorphed with the argument types of the function call
+* If there is already one, return it
+* otherwise it creates a new polymorph function, type checks it and returns it
+*/
 Ast_Function *Typer::get_polymorph_function(Ast_Call *call, Ast_Function *template_function) {
 	for (auto arg : call->arguments) {
 		infer_type(arg);
@@ -824,6 +847,10 @@ Ast_Function *Typer::get_polymorph_function(Ast_Call *call, Ast_Function *templa
 	return polymorph;
 }
 
+/*
+* Creates the polymorphed function from a template function
+* Resolves the generic type aliases
+*/
 Ast_Function *Typer::make_polymorph_function(Ast_Function *template_function, Array<Ast_Expression *> *arguments) {
 	auto poly = compiler->copier->copy_function(template_function);
 	poly->flags &= ~FUNCTION_TEMPLATE;
@@ -856,6 +883,13 @@ Ast_Function *Typer::make_polymorph_function(Ast_Function *template_function, Ar
 	return poly;
 }
 
+/*
+* Checks if the type of an argument matches the type of the parameter
+* If parameter is a generic type alias
+* check if it is already filled in
+*		if so     -> compare already filled in type with argument type
+*		otherwise -> fill in type with argument type
+*/
 bool Typer::can_fill_polymorph(Ast_Type_Info *par_type, Ast_Type_Info *arg_type) {
 	if (par_type->type == Ast_Type_Info::POINTER) {
         if (arg_type->type != Ast_Type_Info::POINTER) return false;
@@ -904,6 +938,7 @@ bool Typer::can_fill_polymorph(Ast_Type_Info *par_type, Ast_Type_Info *arg_type)
     return false;
 }
 
+/* checks if two types match */
 bool Typer::types_match(Ast_Type_Info *t1, Ast_Type_Info *t2) {
 	if (t1->type != t2->type) return false;
     
@@ -937,6 +972,13 @@ bool Typer::types_match(Ast_Type_Info *t1, Ast_Type_Info *t2) {
     return t1->size == t2->size;
 }
 
+/*
+* gets the depth a pointer type
+* for example:
+*		*u32   -> level 1
+*		**u32  -> level 2
+*		***u32 -> level 3
+*/
 s32 Typer::get_pointer_level(Ast_Type_Info *type_info) {
     s32 count = 0;
     
@@ -952,6 +994,10 @@ s32 Typer::get_pointer_level(Ast_Type_Info *type_info) {
     return count;
 }
 
+/*
+* checks if a pointer type at some level points to a void
+* used for void pointer coercion
+*/
 bool Typer::type_points_to_void(Ast_Type_Info *type_info) {
     while (type_info) {
         if (type_info->type == Ast_Type_Info::POINTER) {
@@ -964,6 +1010,15 @@ bool Typer::type_points_to_void(Ast_Type_Info *type_info) {
     return false;
 }
 
+/*
+* mangles function name
+* if it is an external function or the main function -> return original name
+* otherwise mangle name in the format:
+*			NAME_PARAMETERTYPES
+* 
+* for example: func add(a: s32, b: s32) s32
+* becomes:     add_s32s32
+*/
 String Typer::mangle_name(Ast_Function *decl) {
 	String name = decl->identifier->atom->id;
 
@@ -983,6 +1038,21 @@ String Typer::mangle_name(Ast_Function *decl) {
 	return sb.to_string();
 }
 
+/*
+* mangle type
+* pointer        -> p$ELEMENT-TYPE
+* void           -> v
+* bool           -> b
+* signed int     -> s$BYTE_SIZE0
+* unsigned int   -> u$BYTE_SIZE
+* float          -> f$BYTE_SIZE
+* string         -> s
+* struct	     -> S_$MEMBER-TYPES
+* function	     -> F$RETURN-TYPE_$PARAMETER-TYPES
+* dynamic array  -> Ad_$ELEMENT-TYPE_
+* static array   -> As_$ELEMENT-TYPE_
+* constant array -> Ak$SIZE_$ELEMENT-TYPE_
+*/
 void Typer::mangle_type(String_Builder *builder, Ast_Type_Info *type) {
 	switch (type->type) {
 		case Ast_Type_Info::POINTER: {
@@ -1044,6 +1114,12 @@ void Typer::mangle_type(String_Builder *builder, Ast_Type_Info *type) {
 	}
 }
 
+/*
+* creates an expression that compares the target expression to is not zero
+* used when a non-conditional expression is used as a conditional expression
+* for example:
+* if 5 {} -> 5 becomes (5 != 0)
+*/
 Ast_Expression *Typer::make_compare_zero(Ast_Expression *target) {
 	infer_type(target);
 

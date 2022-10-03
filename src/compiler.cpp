@@ -20,6 +20,10 @@ static String get_executable_path();
 
 const int AYIN_MAX_PATH = 512;
 
+/*
+* Compiler initialization
+* initialization of primitive types and standard library path
+*/
 Compiler::Compiler(CompileOptions options) {
 	this->options = options;
     llvm_converter = new LLVM_Converter(this);
@@ -83,6 +87,15 @@ Compiler::Compiler(CompileOptions options) {
 	init_definitions();
 }
 
+/*
+* parses the input file
+* handles all the directives that include other files
+* calls the type checker and semantic analysis on the global scope
+* converts the ast to llvm ir
+* if optimization is turned on, optimizes the llvm ir
+* emits the object file
+* links the object file to an executable
+*/
 void Compiler::run() {
 	parse_file(options.input_file);
 
@@ -137,6 +150,11 @@ void Compiler::run() {
 #include "Windows.h"
 #endif
 
+/*
+* requires emitted object file "output.o"
+* calls the linker (link.exe on windows and ld on macos/linux)
+* passes linker options and produces executable
+*/
 void Compiler::link_program() {
 #ifdef _WIN32
 	auto win32_sdk = find_visual_studio_and_windows_sdk();
@@ -212,6 +230,11 @@ void Compiler::link_program() {
 	#endif
 }
 
+/*
+* parses file
+* looks if file was already processed -> if so -> skip
+* read file content and run the lexer and parser on the content
+*/
 void Compiler::parse_file(String file_path) {
 	for (auto included_file : source_table_files) {
 		if (included_file == file_path) {
@@ -237,6 +260,7 @@ void Compiler::parse_file(String file_path) {
 	parser.parse();
 }
 
+/* initializes directive definitions for static ifs */
 void Compiler::init_definitions() {
 #if defined(_WIN64)
 	definitions.add(to_string("win64"));
@@ -252,6 +276,7 @@ void Compiler::init_definitions() {
 #endif
 }
 
+/* converts array of strings to one long string */
 u8 *Compiler::get_command_line(Array<String> *strings) {
 	s64 total_length = 0;
 
@@ -416,7 +441,7 @@ void Compiler::report_error(Ast *ast, const char *fmt, ...) {
     va_end(args);
 }
 
-
+/* gets the line from a source file */
 String Compiler::get_line(Source_Location location) {
 	String source;
 	for (int i = 0; i < source_table_files.length; ++i) {

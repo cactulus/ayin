@@ -6,6 +6,10 @@
 
 struct Compiler;
 
+/*
+* The copier is used to copy AST Nodes
+* this is needed for polymorphing template functions
+*/
 struct Copier {
     Compiler *compiler;
     Ast_Scope *current_scope;
