@@ -413,6 +413,7 @@ void Compiler::report_error2(Source_Location loc1, const char *msg1, Source_Loca
 	report_error_base(loc2, msg2);
 
 	errors_reported++;
+	exit(1);
 }
 
 void Compiler::report_error(Source_Location location, const char *fmt, va_list args) {
@@ -422,6 +423,7 @@ void Compiler::report_error(Source_Location location, const char *fmt, va_list a
 	report_error_base(location, error);
 
 	errors_reported++;
+	exit(1);
 }
 
 void Compiler::report_error(Token *token, const char *fmt, ...) {

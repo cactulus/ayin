@@ -17,6 +17,9 @@ void Typer::type_check_scope(Ast_Scope *scope) {
 				auto var_decl = static_cast<Ast_Declaration *>(decl);
 				type_check_variable_declaration(var_decl);
 			} break;
+			case Ast::TYPE_ALIAS: {
+				break;
+			}
 			case Ast::FUNCTION: {
 				auto fun = static_cast<Ast_Function *>(decl);
 
@@ -667,6 +670,23 @@ Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 				current->element_type = new_type;
 			} else {
 				auto name = current->element_type->unresolved_name;
+				compiler->report_error(name,
+					"Can't resolve symbol '%.*s'",
+					name->atom->id.length, name->atom->id.data);
+				return type_info;
+			}
+		}
+
+		return type_info;
+	}
+
+	if (type_is_function(type_info)) {
+		for (int i = 0; i < type_info->parameters.length; ++i) {
+			Ast_Type_Info *new_type = resolve_type_info(type_info->parameters[i]);
+			if (new_type) {
+				type_info->parameters[i] = new_type;
+			} else {
+				auto name = type_info->parameters[i]->unresolved_name;
 				compiler->report_error(name,
 					"Can't resolve symbol '%.*s'",
 					name->atom->id.length, name->atom->id.data);
