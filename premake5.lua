@@ -8,11 +8,11 @@ project "ayin"
 	language "C++"
 	targetdir "bin/%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 	objdir "build/%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
+	cppdialect "C++17"
 
 	files { "src/*.h", "src/*.cpp" }
 
 	filter "system:windows"
-		cppdialect "C++17"
 		architecture "x64"
 		staticruntime "On"
 		systemversion "10.0.19041.0"
@@ -26,7 +26,7 @@ project "ayin"
 
 	filter { "system:macosx" }
   		buildoptions { "`llvm-config --cxxflags`" }
-  		linkoptions { "`llvm-config --ldflags --libs core`" }
+  		linkoptions { "`llvm-config --ldflags --libs all`" }
 		buildoptions { "-Wno-writable-strings -Wno-switch" }
 
 	filter "configurations:Debug"

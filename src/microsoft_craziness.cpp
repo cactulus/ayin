@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #include "microsoft_craziness.h";
 
 //
@@ -521,8 +522,6 @@ void find_visual_studio_by_fighting_through_microsoft_craziness(Find_Result *res
     // If we get here, we failed to find anything.
 }
 
-
-
 Find_Result find_visual_studio_and_windows_sdk() {
  Find_Result result;
 
@@ -537,3 +536,4 @@ Find_Result find_visual_studio_and_windows_sdk() {
 
  return result;
 }
+#endif

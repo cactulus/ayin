@@ -222,10 +222,16 @@ void Compiler::link_program() {
 	args.add(to_string("output.o"));
 
 	args.add(to_string("-o"));
-	args.add(compiler->executable_name);
+	args.add(options.output_file);
+
+#if defined(__APPLE__) || defined(__MACH__)
+	args.add(to_string("-syslibroot"));
+	args.add(to_string("`xcrun --show-sdk-path`"));
+	args.add(to_string("-lSystem"));
+#endif
 
 	auto cmd_line = get_command_line(&args);
-	printf("Linker command: %s\n", cmd_line);
+	// printf("Linker command: %s\n", cmd_line);
 	system((char *)cmd_line);
 	#endif
 }
@@ -418,7 +424,7 @@ void Compiler::report_error2(Source_Location loc1, const char *msg1, Source_Loca
 
 void Compiler::report_error(Source_Location location, const char *fmt, va_list args) {
 	char error[512];
-	vsprintf_s(error, 512, fmt, args);
+	vsprintf(error, fmt, args);
 
 	report_error_base(location, error);
 

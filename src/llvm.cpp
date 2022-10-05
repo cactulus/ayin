@@ -15,12 +15,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
-/* TODO: remove later. uniform llvm version */
-#ifdef _WIN64
-#include "llvm/Support/TargetRegistry.h"
-#else
 #include "llvm/MC/TargetRegistry.h"
-#endif
 
 #include "llvm/Target/TargetMachine.h"
 
@@ -481,8 +476,10 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				auto declaration = find_declaration_by_id(call->identifier);
 				Ast_Declaration *decl = static_cast<Ast_Declaration *>(declaration);
 
+				FunctionType *fun_type = static_cast<FunctionType *>(convert_type(call->identifier->type_info));
+
 				auto loaded = load(decl, decl->llvm_reference);
-				call_inst = irb->CreateCall(loaded, ArrayRef<Value *>(arguments.data, arguments.length));
+				call_inst = irb->CreateCall(fun_type, loaded, ArrayRef<Value *>(arguments.data, arguments.length));
 			} else {
 				Function *fun = get_or_create_function(call->resolved_function);
 				call_inst = irb->CreateCall(fun, ArrayRef<Value *>(arguments.data, arguments.length));
@@ -988,14 +985,14 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
 
 Value *LLVM_Converter::lalloca(Type *ty) {
 	AllocaInst *lalloca = irb->CreateAlloca(ty);
-	lalloca->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	lalloca->setAlignment(llvm_module->getDataLayout().getABITypeAlign(ty));
 	return lalloca;
 }
 
 Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 	Type *ty = value->getType()->getPointerElementType();
 	LoadInst *load = irb->CreateLoad(ty, value);
-	load->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	load->setAlignment(llvm_module->getDataLayout().getABITypeAlign(ty));
 
 	if (options->debug) {
 		debug.add_inst(expr, load);
@@ -1007,7 +1004,7 @@ Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 Value *LLVM_Converter::store(Ast_Expression *expr, Value *value, Value *ptr) {
 	Type *ty = value->getType();
 	StoreInst *store = irb->CreateStore(value, ptr);
-	store->setAlignment(llvm_module->getDataLayout().getABITypeAlignment(ty));
+	store->setAlignment(llvm_module->getDataLayout().getABITypeAlign(ty));
 
 	if (options->debug) {
 		debug.add_inst(expr, store);
@@ -1075,8 +1072,8 @@ void DebugInfo::add_variable(Ast_Identifier *id, Value *var, BasicBlock *block) 
 }
 
 void DebugInfo::add_inst(Ast_Expression *expr, llvm::Instruction *inst) {
-	DebugLoc loc = DebugLoc::get(expr->location.line + 1, expr->location.col, current_sp);
-	inst->setDebugLoc(loc);
+	auto loc = DILocation::get(current_sp->getContext(), expr->location.line + 1, expr->location.col, current_sp);
+	inst->setDebugLoc(DebugLoc(loc));
 }
 
 DIType *DebugInfo::convert_type(Type *type) {
@@ -1089,7 +1086,6 @@ DIType *DebugInfo::convert_type(Type *type) {
 		case Type::LabelTyID:
 		case Type::MetadataTyID:
 		case Type::X86_MMXTyID:
-		case Type::VectorTyID:
 		case Type::TokenTyID: {
 			std::string name;
 			raw_string_ostream os(name);
@@ -1135,7 +1131,7 @@ DIType *DebugInfo::convert_type(Type *type) {
 		}
 		case Type::PointerTyID: {
 			PointerType *pointer_type = dyn_cast<PointerType>(type);
-			return db->createPointerType(convert_type(pointer_type->getElementType()), layout->getTypeSizeInBits(type));
+			return db->createPointerType(convert_type(pointer_type->getPointerElementType()), layout->getTypeSizeInBits(type));
 		}
 	}
 

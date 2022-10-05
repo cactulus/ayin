@@ -4,14 +4,14 @@
 func main() s32 {
 	a: [..]s32;
 	
-	array_reserve(&a, cast(s64) 0);
+	array_add(&a, 32);
+	array_add(&a, 92);
+	array_add(&a, 25);
+	array_add(&a, 12);
 
-	for i := 0..10 {
-		a[i] = i;
-		a.length++;
+	for a {
+		printf("%d\n".data, it);
 	}
-
-	printf("%ld\n".data, a.capacity);
 
 	return 0;
 }
