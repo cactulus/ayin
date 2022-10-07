@@ -94,4 +94,7 @@ Ast_Type_Info *make_pointer_type(Ast_Type_Info *element_type);
 Ast_Expression *find_declaration_by_name(Atom *name, Ast_Scope *scope);
 Ast_Expression *find_declaration_by_id(Ast_Identifier *id);
 
+String type_to_string(Ast_Type_Info *type);
+void type_to_string_builder(Ast_Type_Info *type, String_Builder *builder);
+
 #endif

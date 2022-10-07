@@ -357,7 +357,7 @@ Ast_Expression *find_declaration_by_name(Atom *name, Ast_Scope *scope) {
 				} break;
 				case Ast::ENUM: {
 					auto e = static_cast<Ast_Enum *>(decl);
-					if (e->identifier->atom == name)
+                    if (e->identifier->atom == name)
 						return decl;
 				} break;
 			}
@@ -408,7 +408,7 @@ void Compiler::report_error_base(Source_Location loc, const char *msg) {
 	}
 
 	for (s32 i = 0; i < loc.length; ++i) {
-		putc('*', stdout);
+		putc('^', stdout);
 	}
 
 	puts("\n");
@@ -483,6 +483,65 @@ String Compiler::get_line(Source_Location location) {
 	}
 
 	return source.substring(line_start, line_length - 1);
+}
+
+String type_to_string(Ast_Type_Info *type) {
+    String_Builder sb;
+    
+    type_to_string_builder(type, &sb);
+    
+    return sb.to_string();
+}
+
+void type_to_string_builder(Ast_Type_Info *type, String_Builder *builder) {
+    switch (type->type) {
+        case Ast_Type_Info::POINTER: {
+            builder->append(to_string("pointer to "));
+            type_to_string_builder(type->element_type, builder);
+        } break;
+        case Ast_Type_Info::VOID: {
+            builder->putchar('void');
+        } break;
+        case Ast_Type_Info::BOOL: {
+            builder->putchar('bool');
+        } break;
+        case Ast_Type_Info::INT: {
+            if (type->is_signed) builder->append(to_string("signed"));
+            else builder->append(to_string("unsigned"));
+
+            builder->print("%d", type->size * 8);
+            builder->append(to_string("-bit integer"));
+        } break;
+        case Ast_Type_Info::FLOAT: {
+            builder->print("%d", type->size * 8);
+            builder->append(to_string("-bit float"));
+        } break;
+        case Ast_Type_Info::STRING: {
+            builder->append(to_string("string"));
+        } break;
+        case Ast_Type_Info::STRUCT: {
+            builder->append(to_string("struct "));
+            auto name = type->struct_decl->identifier->atom->id;
+            builder->print("'%.*s'", name.length, name.data);
+        } break;
+        case Ast_Type_Info::FUNCTION: {
+            builder->append(to_string("function"));
+        } break;
+        case Ast_Type_Info::ARRAY: {
+            if (type->array_size >= 0) {
+                builder->append(to_string("constant "));
+            } else if (type->is_dynamic) {
+                builder->append(to_string("dynamic "));
+            } else {
+                builder->append(to_string("static "));
+            }
+            
+            builder->append(to_string("array"));
+        } break;
+        default: {
+            builder->append(to_string("unresolved type"));
+        }
+    }
 }
 
 #ifdef _WIN32

@@ -1,17 +1,8 @@
 #use "libc";
 #use "array";
+#use "glfw";
 
 func main() s32 {
-	a: [..]s32;
-	
-	array_add(&a, 32);
-	array_add(&a, 92);
-	array_add(&a, 25);
-	array_add(&a, 12);
-
-	for a {
-		printf("%d\n".data, it);
-	}
 
 	return 0;
 }

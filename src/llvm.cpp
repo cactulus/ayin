@@ -97,6 +97,7 @@ void LLVM_Converter::convert_statement(Ast_Expression *expression) {
 			convert_scope(static_cast<Ast_Scope *>(expression));
 		} break;
 		case Ast::DIRECTIVE:
+		case Ast::ENUM:
 		case Ast::TYPE_ALIAS:
 		case Ast::STRUCT: {
 		} break;

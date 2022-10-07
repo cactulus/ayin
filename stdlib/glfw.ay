@@ -220,7 +220,7 @@ alias framebuffer_size_callback_fn (GLFWwindow, s32, s32) void;
 
 extern func glfwInit() s32;
 extern func glfwWindowHint(hint: s32, value: s32);
-extern func glfwCreateWindow(width: s32, height: s32, title: str, monitor: *void, share: *void) GLFWwindow;
+extern func glfwCreateWindow(width: s32, height: s32, title: *u8, monitor: *void, share: *void) GLFWwindow;
 extern func glfwWindowShouldClose(window: GLFWwindow) s32;
 extern func glfwSwapBuffers(window: GLFWwindow);
 extern func glfwMakeContextCurrent(window: GLFWwindow);
@@ -235,6 +235,6 @@ extern func glfwGetCursorPos(window: GLFWwindow, xpos: *f64, ypos: *f64);
 extern func glfwGetFramebufferSize(window: GLFWwindow, width: *s32, height: *s32);
 extern func glfwSetWindowUserPointer(window: GLFWwindow, pointer: *void);
 extern func glfwGetWindowUserPointer(window: GLFWwindow) *void;
-extern func glfwSetWindowTitle(window: GLFWwindow, title: str);
+extern func glfwSetWindowTitle(window: GLFWwindow, title: *u8);
 extern func glfwSetFramebufferSizeCallback(window: GLFWwindow, framebuffer_size_callback: framebuffer_size_callback_fn);
 extern func glfwSetKeyCallback(window: GLFWwindow, key_callback: key_callback_fn);

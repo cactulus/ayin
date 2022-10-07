@@ -145,8 +145,17 @@ Ast_Enum *Parser::parse_enum_declaration() {
 	s32 index = 0;
 	while (!expect_eat('}')) {
 		Ast_Identifier *mem_id = parse_identifier();
+		Ast_Type_Info::Enum_Member mem;
+		mem.name = mem_id->atom;
 
-		enum_type->enum_members.add({mem_id->atom, index++});
+		if (expect_eat('=')) {
+			mem.value = parse_literal();
+		} else {
+			mem.index = index;
+		}
+		index++;
+
+		enum_type->enum_members.add(mem);
 
 		expect_eat(',');
 	}
@@ -767,6 +776,31 @@ Ast_Expression *Parser::parse_primary() {
 		return lit;
 	}
 
+	if (expect(Token::SIZEOF)) {
+        Ast_Sizeof *size = AST_NEW(Ast_Sizeof);
+        next();
+        
+        if (!expect_eat('(')) {
+        	compiler->report_error(peek(), "Expected '('");
+        	return size;
+		}
+        
+        size->target_type = parse_type_specifier();
+        
+        if (!expect_eat(')')) {
+        	compiler->report_error(peek(), "Expected ')'");
+			return size;
+		}
+        
+        return size;
+    }
+
+	return parse_literal();
+}
+
+Ast_Literal *Parser::parse_literal() {
+	auto t = peek();
+
 	if (expect(Token::INT_LIT)) {
 		Ast_Literal *lit = AST_NEW(Ast_Literal);
 		next();
@@ -811,25 +845,6 @@ Ast_Expression *Parser::parse_primary() {
 		lit->int_value = 0;
 		return lit;
 	}
-
-	if (expect(Token::SIZEOF)) {
-        Ast_Sizeof *size = AST_NEW(Ast_Sizeof);
-        next();
-        
-        if (!expect_eat('(')) {
-        	compiler->report_error(peek(), "Expected '('");
-        	return size;
-		}
-        
-        size->target_type = parse_type_specifier();
-        
-        if (!expect_eat(')')) {
-        	compiler->report_error(peek(), "Expected ')'");
-			return size;
-		}
-        
-        return size;
-    }
 
 	return 0;
 }

@@ -37,6 +37,7 @@ struct Parser {
 	Ast_Expression *parse_unary();
 	Ast_Expression *parse_postfix();
 	Ast_Expression *parse_primary();
+	Ast_Literal *parse_literal();
 
 	Ast_Identifier *parse_identifier();
 

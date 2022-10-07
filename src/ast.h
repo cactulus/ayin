@@ -141,7 +141,8 @@ struct Ast_Type_Info {
 
 	struct Enum_Member {
 		Atom *name;
-		s64 index;
+		Ast_Literal *value = 0;
+		s32 index;
 	};
 
 	Base_Type type;
@@ -393,6 +394,10 @@ struct Ast_Break : Ast_Expression {
 		type = Ast::BREAK;
 	}
 };
+
+inline bool type_is_enum(Ast_Type_Info *type_info) {
+	return type_info->type == Ast_Type_Info::ENUM;
+}
 
 inline bool type_is_struct(Ast_Type_Info *type_info) {
 	return type_info->type == Ast_Type_Info::STRUCT;

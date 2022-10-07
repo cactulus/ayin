@@ -49,9 +49,9 @@ struct String {
     }
 };
 
-inline String to_string(char *c_string) {
+inline String to_string(const char *c_string) {
     String s;
-    s.data = c_string;
+    s.data = (char *) c_string;
     s.length = strlen(c_string);
     return s;
 }

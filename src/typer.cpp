@@ -20,6 +20,9 @@ void Typer::type_check_scope(Ast_Scope *scope) {
 			case Ast::TYPE_ALIAS: {
 				break;
 			}
+			case Ast::ENUM: {
+				break;
+			}
 			case Ast::FUNCTION: {
 				auto fun = static_cast<Ast_Function *>(decl);
 
@@ -66,7 +69,10 @@ void Typer::type_check_statement(Ast_Expression *stmt) {
 				ret->return_value = check_expression_type_and_cast(ret->return_value, current_function->return_type);
 
 				if (!types_match(ret->return_value->type_info, current_function->return_type)) {
-					compiler->report_error(ret, "Type of return value and return type of function do not match");
+                    String ret_val_ty_str = type_to_string(ret->return_value->type_info);
+                    String ret_ty_str = type_to_string(current_function->return_type);
+                    
+					compiler->report_error(ret, "Type of return value (%.*s) and return type of function (%.*s) do not match", ret_val_ty_str.length, ret_val_ty_str.data, ret_ty_str.length, ret_ty_str.data);
 				}
 
 			} else if (current_function->return_type->type != Ast_Type_Info::VOID) {
@@ -230,16 +236,7 @@ void Typer::type_check_variable_declaration(Ast_Declaration *decl) {
 	}
 
 	if (decl->type_info) {
-		Ast_Type_Info *new_type = resolve_type_info(decl->type_info);
-		
-		if (new_type) {
-			decl->type_info = new_type;
-		} else {
-			compiler->report_error(decl->type_info->unresolved_name,
-					"Can't resolve symbol '%s'",
-					decl->type_info->unresolved_name->atom->id.data);
-			return;
-		}
+        resolve_type_force(&decl->type_info);
 
 		if (decl->initializer) {
 			infer_type(decl->initializer);
@@ -252,8 +249,8 @@ void Typer::type_check_variable_declaration(Ast_Declaration *decl) {
 		}
 	} else {
 		assert(decl->initializer);
-
-		infer_type(decl->initializer);
+        
+        infer_type(decl->initializer);
 		decl->type_info = decl->initializer->type_info;
 	}
 }
@@ -261,7 +258,6 @@ void Typer::type_check_variable_declaration(Ast_Declaration *decl) {
 void Typer::type_check_function(Ast_Function *function) {
 	Ast_Function *old_current_function = current_function;
 	current_function = function;
-
 
 	for (auto par : function->parameter_scope->declarations) {
 		type_check_variable_declaration(static_cast<Ast_Declaration *>(par));
@@ -272,6 +268,8 @@ void Typer::type_check_function(Ast_Function *function) {
         compiler->report_error(function, "Can't resolve return type of function");
         return;
     }
+    
+    resolve_type_force(&function->type_info);
 
     if (compiler->errors_reported) return;
 
@@ -333,16 +331,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 			infer_type(cast->expression);
 			cast->type_info = cast->target_type;
 
-			Ast_Type_Info *new_type = resolve_type_info(cast->type_info);
-
-			if (new_type) {
-				cast->type_info = new_type;
-			} else {
-				auto name = cast->type_info->unresolved_name;
-				compiler->report_error(name,
-					"Can't resolve symbol '%.*s'",
-					name->atom->id.length, name->atom->id.data);
-			}
+            resolve_type_force(&cast->type_info);
 		} break;
 		case Ast::CALL: {
 			Ast_Call *call = static_cast<Ast_Call *>(expression);
@@ -513,16 +502,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 			Ast_Sizeof *size = static_cast<Ast_Sizeof *>(expression);
 			size->type_info = compiler->type_s32;
 
-			Ast_Type_Info *new_type = resolve_type_info(size->target_type);
-
-			if (new_type) {
-				size->target_type = new_type;
-			} else {
-				auto name = size->target_type->unresolved_name;
-				compiler->report_error(name,
-					"Can't resolve symbol '%.*s'",
-					name->atom->id.length, name->atom->id.data);
-			}
+            resolve_type_force(&size->target_type);
 		} break;
 		case Ast_Expression::INDEX: {
 			Ast_Index *index = static_cast<Ast_Index *>(expression);
@@ -642,6 +622,32 @@ void Typer::infer_type(Ast_Expression *expression) {
 					String field_name = field_atom->id;
 					compiler->report_error(member, "No member '%.*s' in type string.\n", field_name.length, field_name.data);
 				}
+			} else if (type_is_enum(left_type)) {
+                bool found = false;
+				for (auto enum_mem : left_type->enum_members) {
+					if (field_atom == enum_mem.name) {
+						if (enum_mem.value) {
+							infer_type(enum_mem.value);
+							member->substitution = enum_mem.value;
+                            member->type_info = enum_mem.value->type_info;
+						} else {
+							Ast_Literal *enum_index = new Ast_Literal();
+							copy_location_info(enum_index, member);
+
+							enum_index->type_info = compiler->type_s32;
+							enum_index->literal_type = Ast_Literal::INT;
+							enum_index->int_value = enum_mem.index;
+
+							member->substitution = enum_index;
+                            member->type_info = enum_index->type_info;
+						}
+                        found = true;
+					}
+				}
+                
+                if (!found) {
+                    compiler->report_error(member->field, "Enum member not found");
+                }
 			} else {
 				compiler->report_error(member, "Tried to access type that is not a string, array or struct");
 				return;
@@ -664,17 +670,7 @@ Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 				continue;
 			}
 
-			Ast_Type_Info *new_type = resolve_type_info(current->element_type);
-
-			if (new_type) {
-				current->element_type = new_type;
-			} else {
-				auto name = current->element_type->unresolved_name;
-				compiler->report_error(name,
-					"Can't resolve symbol '%.*s'",
-					name->atom->id.length, name->atom->id.data);
-				return type_info;
-			}
+            resolve_type_force(&current->element_type);
 		}
 
 		return type_info;
@@ -682,18 +678,10 @@ Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 
 	if (type_is_function(type_info)) {
 		for (int i = 0; i < type_info->parameters.length; ++i) {
-			Ast_Type_Info *new_type = resolve_type_info(type_info->parameters[i]);
-			if (new_type) {
-				type_info->parameters[i] = new_type;
-			} else {
-				auto name = type_info->parameters[i]->unresolved_name;
-				compiler->report_error(name,
-					"Can't resolve symbol '%.*s'",
-					name->atom->id.length, name->atom->id.data);
-				return type_info;
-			}
+            resolve_type_force(&type_info->parameters[i]);
 		}
 
+        resolve_type_force(&type_info->return_type);
 		return type_info;
 	}
 
@@ -716,6 +704,7 @@ Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 		case Ast::TYPE_ALIAS: {
 			auto ta = static_cast<Ast_Type_Alias *>(decl);
 			if (ta->type_info) {
+                resolve_type_force(&ta->type_info);
 				return ta->type_info;
 			}
 			return 0;
@@ -732,6 +721,20 @@ Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 	}
 
 	return type_info;
+}
+
+
+void Typer::resolve_type_force(Ast_Type_Info **type_info) {
+    Ast_Type_Info *new_type = resolve_type_info(*type_info);
+    
+    if (new_type) {
+        *type_info = new_type;
+    } else {
+        auto name = (*type_info)->unresolved_name;
+        compiler->report_error(name,
+            "Can't resolve symbol '%.*s'",
+            name->atom->id.length, name->atom->id.data);
+    }
 }
 
 /*
@@ -766,10 +769,15 @@ bool Typer::compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *arg
 		Ast_Type_Info *arg_type = (*args)[i]->type_info;
 
 		if (!types_match(arg_type, par_type)) {
+            String par_ty_str = type_to_string(par_type);
+            String arg_ty_str = type_to_string(arg_type);
+            
 			compiler->report_error(
 				(*args)[i],
-				"Type of %d. parameter does not match type in function declaration",
-				i
+				"Type of %d. argument (%.*s) does not match type in function declaration (%.*s)",
+				i + 1,
+                arg_ty_str.length, arg_ty_str.data,
+                par_ty_str.length, par_ty_str.data
 			);
 			return false;
 		}
@@ -788,6 +796,8 @@ bool Typer::compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *arg
 * Is is the callers responsibility to check if the types match in the end
 */
 Ast_Expression *Typer::check_expression_type_and_cast(Ast_Expression *expression, Ast_Type_Info *other_type) {
+	while(expression->substitution) expression = expression->substitution;
+
 	auto rtype = expression->type_info;
 	auto ltype = other_type;
 

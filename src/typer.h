@@ -22,6 +22,7 @@ struct Typer {
 
 	void infer_type(Ast_Expression *expression);
 	Ast_Type_Info *resolve_type_info(Ast_Type_Info *type_info);
+    void resolve_type_force(Ast_Type_Info **type_info);
 
 	bool compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *args, Array<Ast_Type_Info *> par_types, bool varags);
 
