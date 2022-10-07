@@ -2,7 +2,7 @@
 #define COMMON_H_
 
 /* 
- * credits to machinamentum
+ * credits to machinamentumdf
  */
 
 #include <assert.h>

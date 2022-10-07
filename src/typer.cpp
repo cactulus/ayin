@@ -75,7 +75,7 @@ void Typer::type_check_statement(Ast_Expression *stmt) {
 					compiler->report_error(ret, "Type of return value (%.*s) and return type of function (%.*s) do not match", ret_val_ty_str.length, ret_val_ty_str.data, ret_ty_str.length, ret_ty_str.data);
 				}
 
-			} else if (current_function->return_type->type != Ast_Type_Info::VOID) {
+			} else if (current_function->return_type->type != Ast_Type_Info::VOID_TYPE) {
 				compiler->report_error(ret, "Tried to return no value from non-void function");
 			}
 			break;
@@ -1033,7 +1033,7 @@ bool Typer::type_points_to_void(Ast_Type_Info *type_info) {
         if (type_info->type == Ast_Type_Info::POINTER) {
             type_info = type_info->element_type;
         } else {
-            return type_info->type == Ast_Type_Info::VOID;
+            return type_info->type == Ast_Type_Info::VOID_TYPE;
         }
     }
     
@@ -1089,7 +1089,7 @@ void Typer::mangle_type(String_Builder *builder, Ast_Type_Info *type) {
 			builder->putchar('p');
 			mangle_type(builder, type->element_type);
 		} break;
-		case Ast_Type_Info::VOID: {
+		case Ast_Type_Info::VOID_TYPE: {
 			builder->putchar('v');
 		} break;
 		case Ast_Type_Info::BOOL: {

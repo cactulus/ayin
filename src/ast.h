@@ -130,7 +130,8 @@ struct Ast_Type_Info {
 		FUNCTION,
 
 		POINTER,
-		VOID,
+		/* type so it doesnt conflict with stupid Windows.h macro VOID */
+		VOID_TYPE,
 		BOOL,
 		INT,
 		FLOAT,
@@ -435,7 +436,7 @@ inline bool type_is_primitive(Ast_Type_Info *type_info) {
 	switch (type_info->type) {
 		case Ast_Type_Info::FLOAT:
 		case Ast_Type_Info::INT:
-		case Ast_Type_Info::VOID:
+		case Ast_Type_Info::VOID_TYPE:
 		case Ast_Type_Info::BOOL:
 			return true;
 		default:

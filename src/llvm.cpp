@@ -767,7 +767,7 @@ Value *LLVM_Converter::convert_binary(Ast_Binary *binary) {
 
 Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
 	if (type_info->type == Ast_Type_Info::POINTER) {
-		if (type_info->element_type->type == Ast_Type_Info::VOID) {
+		if (type_info->element_type->type == Ast_Type_Info::VOID_TYPE) {
 			return type_i8->getPointerTo();
 		}
 
@@ -790,7 +790,7 @@ Type *LLVM_Converter::convert_type(Ast_Type_Info *type_info) {
 		}
 	}
 
-	if (type_info->type == Ast_Type_Info::VOID) {
+	if (type_info->type == Ast_Type_Info::VOID_TYPE) {
 		return type_void;
 	}
 
@@ -879,7 +879,7 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 	convert_scope(fun->block_scope);
 
 	if (!irb->GetInsertBlock()->getTerminator()) {
-		if (fun->return_type->type == Ast_Type_Info::VOID) {
+		if (fun->return_type->type == Ast_Type_Info::VOID_TYPE) {
 			Instruction *inst = irb->CreateRetVoid();
 
 			if (options->debug) {

@@ -32,7 +32,7 @@ Compiler::Compiler(CompileOptions options) {
     typer = new Typer(this);
 
 	type_void = new Ast_Type_Info();
-	type_void->type = Ast_Type_Info::VOID;
+	type_void->type = Ast_Type_Info::VOID_TYPE;
 
 	type_void_ptr = make_pointer_type(type_void);
 
@@ -499,7 +499,7 @@ void type_to_string_builder(Ast_Type_Info *type, String_Builder *builder) {
             builder->append(to_string("pointer to "));
             type_to_string_builder(type->element_type, builder);
         } break;
-        case Ast_Type_Info::VOID: {
+        case Ast_Type_Info::VOID_TYPE: {
             builder->putchar('void');
         } break;
         case Ast_Type_Info::BOOL: {
