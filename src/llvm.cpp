@@ -15,7 +15,11 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
+#if LLVM_VERSION_MAJOR == 8
+#include "llvm/Support/TargetRegistry.h"
+#else
 #include "llvm/MC/TargetRegistry.h"
+#endif
 
 #include "llvm/Target/TargetMachine.h"
 
@@ -29,6 +33,12 @@
 #include "llvm.h"
 
 #define STR_REF(x) StringRef(x.data, x.length)
+
+#if LLVM_VERSION_MAJOR == 8
+#define ABI_TYPE_ALIGN(x) llvm_module->getDataLayout().getABITypeAlignment(x)
+#else
+#define ABI_TYPE_ALIGN(x) llvm_module->getDataLayout().getABITypeAlign(x)
+#endif
 
 using namespace llvm;
 
@@ -986,14 +996,14 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
 
 Value *LLVM_Converter::lalloca(Type *ty) {
 	AllocaInst *lalloca = irb->CreateAlloca(ty);
-	lalloca->setAlignment(llvm_module->getDataLayout().getABITypeAlign(ty));
+	lalloca->setAlignment(ABI_TYPE_ALIGN(ty));
 	return lalloca;
 }
 
 Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 	Type *ty = value->getType()->getPointerElementType();
 	LoadInst *load = irb->CreateLoad(ty, value);
-	load->setAlignment(llvm_module->getDataLayout().getABITypeAlign(ty));
+	load->setAlignment(ABI_TYPE_ALIGN(ty));
 
 	if (options->debug) {
 		debug.add_inst(expr, load);
@@ -1005,7 +1015,7 @@ Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 Value *LLVM_Converter::store(Ast_Expression *expr, Value *value, Value *ptr) {
 	Type *ty = value->getType();
 	StoreInst *store = irb->CreateStore(value, ptr);
-	store->setAlignment(llvm_module->getDataLayout().getABITypeAlign(ty));
+	store->setAlignment(ABI_TYPE_ALIGN(ty));
 
 	if (options->debug) {
 		debug.add_inst(expr, store);

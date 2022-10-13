@@ -218,9 +218,6 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 		compiler->report_error(peek(), "Expected '(' after function name");
 	}
 
-	Ast_Type_Info *func_type = new Ast_Type_Info();
-	func_type->type = Ast_Type_Info::FUNCTION;
-
 	push_scope();
 	fn->parameter_scope = current_scope;
 	while (!expect_eat(')')) {
@@ -235,7 +232,6 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 		}
 
 		current_scope->declarations.add(par_decl);
-		func_type->parameters.add(par_decl->type_info);
 
 		if (!expect(')')) {
 			if (!expect_eat(',')) {
@@ -245,12 +241,6 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 
 		if (expect_eat(Token::DOT_DOT_DOT)) {
 			fn->flags |= FUNCTION_VARARG;
-		}
-	}
-
-	for (auto pt : func_type->parameters) {
-		if (type_is_pointer(pt)) {
-			printf("Test\n");
 		}
 	}
 
@@ -267,8 +257,6 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 			compiler->report_error(peek(), "Expected ';' after return type specifier");
 		}
 	}
-
-	func_type->return_type = fn->return_type;
 
 	if (!is_extern) {
 		push_scope();
@@ -308,7 +296,6 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 		pop_scope();
 	}
 
-	fn->type_info = func_type;
 	return fn;
 }
 

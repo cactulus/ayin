@@ -256,15 +256,22 @@ void Typer::type_check_variable_declaration(Ast_Declaration *decl) {
 }
 
 void Typer::type_check_function(Ast_Function *function) {
+	/* already checked */
+	if (function->type_info) return;
+
 	Ast_Function *old_current_function = current_function;
 	current_function = function;
 
+	Ast_Type_Info *func_type = new Ast_Type_Info();
+	func_type->type = Ast_Type_Info::FUNCTION;
+
 	for (auto par : function->parameter_scope->declarations) {
 		type_check_variable_declaration(static_cast<Ast_Declaration *>(par));
+		func_type->parameters.add(par->type_info);
 	}
     
     resolve_type_force(&function->return_type);
-    resolve_type_force(&function->type_info);
+	func_type->return_type = function->return_type;
 
     if (compiler->errors_reported) return;
 
@@ -273,6 +280,8 @@ void Typer::type_check_function(Ast_Function *function) {
 	if (!(function->flags & FUNCTION_EXTERNAL)) {
 		type_check_scope(function->block_scope);
 	}
+
+	function->type_info = func_type;
 
 	current_function = old_current_function;
 }
@@ -341,6 +350,7 @@ void Typer::infer_type(Ast_Expression *expression) {
 
 			if (decl->type == Ast::FUNCTION) {
 				function = static_cast<Ast_Function *>(decl);
+				type_check_function(function);
 			} else {
 				infer_type(call->identifier);
 
@@ -717,7 +727,6 @@ Ast_Type_Info *Typer::resolve_type_info(Ast_Type_Info *type_info) {
 
 	return type_info;
 }
-
 
 void Typer::resolve_type_force(Ast_Type_Info **type_info) {
     Ast_Type_Info *new_type = resolve_type_info(*type_info);
