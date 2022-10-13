@@ -24,7 +24,7 @@ const int AYIN_MAX_PATH = 512;
 * Compiler initialization
 * initialization of primitive types and standard library path
 */
-Compiler::Compiler(CompileOptions options) {
+Compiler::Compiler(CompileOptions *options) {
 	this->options = options;
     llvm_converter = new LLVM_Converter(this);
 	global_scope = new Ast_Scope();
@@ -97,7 +97,7 @@ Compiler::Compiler(CompileOptions options) {
 * links the object file to an executable
 */
 void Compiler::run() {
-	parse_file(options.input_file);
+	parse_file(options->input_file);
 
     if (errors_reported) return;
 
@@ -131,17 +131,17 @@ void Compiler::run() {
 	llvm_converter->convert(global_scope);
     if (errors_reported) return;
 
-	if (options.optimize) {
+	if (options->optimize) {
 		llvm_converter->optimize();
 	}
 
-	if (options.emit_llvm) {
+	if (options->emit_llvm) {
 		llvm_converter->emit_llvm_ir();
 	}
 
 	llvm_converter->emit_object_file();
 
-	if (!options.compile_only) {
+	if (!options->compile_only) {
 		link_program();
 	}
 }
@@ -191,8 +191,18 @@ void Compiler::link_program() {
 		args.add(to_string("/DEBUG"));
 		args.add(to_string("output.o"));
 
+		for (String link_path : options->linker_paths) {
+			snprintf(libpath, LINE_SIZE, "/libpath:%.*s", link_path.length, link_path.data);
+			args.add(copy_string(to_string(libpath)));
+		}
+
+		for (String lib : options->libraries) {
+			args.add(to_string("-l"));
+			args.add(lib);
+		}
+	
 		char executable_name[LINE_SIZE];
-		snprintf(executable_name, LINE_SIZE, "/OUT:%.*s.exe", options.output_file.length, options.output_file.data);
+		snprintf(executable_name, LINE_SIZE, "/OUT:%.*s.exe", options->output_file.length, options->output_file.data);
 		convert_to_back_slashes(executable_name + 1);
 
 		args.add(to_string(executable_name));
@@ -222,7 +232,17 @@ void Compiler::link_program() {
 	args.add(to_string("output.o"));
 
 	args.add(to_string("-o"));
-	args.add(options.output_file);
+	args.add(options->output_file);
+
+	for (String link_path : options->linker_paths) {
+		args.add(to_string("-L"));
+		args.add(link_path);
+	}
+
+	for (String lib : options->libraries) {
+		args.add(to_string("-l"));
+		args.add(lib);
+	}
 
 #if defined(__APPLE__) || defined(__MACH__)
 	args.add(to_string("-syslibroot"));

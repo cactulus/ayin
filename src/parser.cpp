@@ -248,6 +248,12 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 		}
 	}
 
+	for (auto pt : func_type->parameters) {
+		if (type_is_pointer(pt)) {
+			printf("Test\n");
+		}
+	}
+
 	if (expect_eat('{') || expect_eat(';')) {
 		fn->return_type = compiler->type_void;
 	} else {

@@ -17,10 +17,13 @@ struct CompileOptions {
 	bool debug = false;
 	bool emit_llvm = false;
 	bool compile_only = false;
+
+	Array<String> libraries;
+	Array<String> linker_paths;
 };
 
 struct Compiler {
-	CompileOptions options;
+	CompileOptions *options;
 	LLVM_Converter *llvm_converter;
 	Copier *copier;
 	Typer *typer;
@@ -63,7 +66,7 @@ struct Compiler {
 
 	String stdlib_path;
 
-	Compiler(CompileOptions options);
+	Compiler(CompileOptions *options);
 
 	void run();
 

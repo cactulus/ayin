@@ -3,16 +3,18 @@
 #use "glfw";
 
 func main() s32 {
-	a: [..]s32;
-
-	array_add(&a, 21);
-	array_add(&a, 561);
-	array_add(&a, 1);
-	array_add(&a, 91);
-
-	for v := a {
-		printf("%d\n".data, v);
+	if !glfwInit() {
 	}
+
+    win := glfwCreateWindow(600, 480, "Test".data, nil, nil);
+
+    glfwMakeContextCurrent(win);
+
+    while !glfwWindowShouldClose(win) {
+        glfwPollEvents();
+
+        glfwSwapBuffers(win);
+    }
 
 	return 0;
 }

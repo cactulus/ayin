@@ -263,12 +263,7 @@ void Typer::type_check_function(Ast_Function *function) {
 		type_check_variable_declaration(static_cast<Ast_Declaration *>(par));
 	}
     
-    function->return_type = resolve_type_info(function->return_type);
-    if (!function->return_type) {
-        compiler->report_error(function, "Can't resolve return type of function");
-        return;
-    }
-    
+    resolve_type_force(&function->return_type);
     resolve_type_force(&function->type_info);
 
     if (compiler->errors_reported) return;
@@ -1157,11 +1152,20 @@ Ast_Expression *Typer::make_compare_zero(Ast_Expression *target) {
 
 	Ast_Literal *lit = new Ast_Literal();
 	lit->location = target->location;
+	lit->type_info = target_type;
 	
 	switch (target_type->type) {
 		case Ast_Type_Info::INT:
+			lit->literal_type = Ast_Literal::INT;
+			lit->int_value = 0;
+			break;
 		case Ast_Type_Info::FLOAT:
+			lit->literal_type = Ast_Literal::FLOAT;
+			lit->float_value = 0.0;
+			break;
 		case Ast_Type_Info::BOOL:
+			lit->literal_type = Ast_Literal::BOOL;
+			lit->int_value = 0;
 			break;
 		default:
 			compiler->report_error(target, "Expression has to be of type int, bool or float for auto compare zero");

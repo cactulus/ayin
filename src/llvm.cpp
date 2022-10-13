@@ -34,7 +34,7 @@ using namespace llvm;
 
 LLVM_Converter::LLVM_Converter(Compiler *compiler) {
 	this->compiler = compiler;
-	this->options = &compiler->options;
+	this->options = compiler->options;
 
 	InitializeAllTargetInfos();
 	InitializeAllTargets();
