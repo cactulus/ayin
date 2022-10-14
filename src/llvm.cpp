@@ -92,10 +92,6 @@ void LLVM_Converter::convert(Ast_Scope *scope) {
 }
 
 void LLVM_Converter::convert_scope(Ast_Scope *scope) {
-	for (auto decl : scope->declarations) {
-		convert_statement(decl);
-	}
-
 	for (auto stmt : scope->statements) {
 		convert_statement(stmt);
 	}
@@ -356,6 +352,8 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				} else {
 					var->setExternallyInitialized(false);
 				}
+
+				decl->llvm_reference = var;
 			} else {
 				auto var = lalloca(decl_type);
 
@@ -415,7 +413,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				auto decl = static_cast<Ast_Declaration *>(declaration);
 				
 				ref = decl->llvm_reference;
-
+				
 				if (is_lvalue) {
 					return ref;
 				}

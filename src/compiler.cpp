@@ -101,30 +101,6 @@ void Compiler::run() {
 
     if (errors_reported) return;
 
-	while (directives.length > 0) {
-		Ast_Directive *directive = directives[0];
-
-		switch (directive->directive_type) {
-		case Ast_Directive::INCLUDE:
-			parse_file(directive->file);
-			directives.ordered_remove(0);
-			break;
-		case Ast_Directive::USE:
-			char stdlib_path_str[AYIN_MAX_PATH];
-			snprintf(stdlib_path_str, AYIN_MAX_PATH,
-				"%.*s/%.*s.ay", stdlib_path.length,
-				stdlib_path.data, directive->file.length,
-				directive->file.data);
-
-			parse_file(to_string(stdlib_path_str));
-			directives.ordered_remove(0);
-			break;
-		case Ast_Directive::IF:
-			directives.ordered_remove(0);
-			break;
-		}
-	}
-
 	typer->type_check_scope(global_scope);
     if (errors_reported) return;
 
@@ -185,22 +161,22 @@ void Compiler::link_program() {
 			args.add(copy_string(to_string(libpath)));
 		}
 
-		args.add(to_string("/NODEFAULTLIB:libcmt"));
-		args.add(to_string("msvcrt.lib"));
-		args.add(to_string("/nologo"));
-		args.add(to_string("/DEBUG"));
-		args.add(to_string("output.o"));
-
 		for (String link_path : options->linker_paths) {
 			snprintf(libpath, LINE_SIZE, "/libpath:%.*s", link_path.length, link_path.data);
 			args.add(copy_string(to_string(libpath)));
 		}
 
 		for (String lib : options->libraries) {
-			args.add(to_string("-l"));
 			args.add(lib);
 		}
-	
+
+		args.add(to_string("/NODEFAULTLIB:libcmt"));
+		args.add(to_string("msvcrt.lib"));
+		args.add(to_string("legacy_stdio_definitions.lib"));
+		args.add(to_string("/nologo"));
+		args.add(to_string("/DEBUG"));
+		args.add(to_string("output.o"));
+
 		char executable_name[LINE_SIZE];
 		snprintf(executable_name, LINE_SIZE, "/OUT:%.*s.exe", options->output_file.length, options->output_file.data);
 		convert_to_back_slashes(executable_name + 1);
@@ -226,7 +202,6 @@ void Compiler::link_program() {
 		remove("output.o");
 	}
 	#else
-	// @Incomplete should use the execpve family
 	Array<String> args;
 	args.add(to_string("ld"));
 	args.add(to_string("output.o"));
@@ -300,6 +275,25 @@ void Compiler::init_definitions() {
 	definitions.add(to_string("unix"));
 	definitions.add(to_string("linux"));
 #endif
+}
+
+void Compiler::handle_directive(Ast_Directive *directive) {
+	switch (directive->directive_type) {
+	case Ast_Directive::INCLUDE:
+		parse_file(directive->file);
+		break;
+	case Ast_Directive::USE:
+		char stdlib_path_str[AYIN_MAX_PATH];
+		snprintf(stdlib_path_str, AYIN_MAX_PATH,
+			"%.*s/%.*s.ay", stdlib_path.length,
+			stdlib_path.data, directive->file.length,
+			directive->file.data);
+
+		parse_file(to_string(stdlib_path_str));
+		break;
+	default:
+		break;
+	}
 }
 
 /* converts array of strings to one long string */

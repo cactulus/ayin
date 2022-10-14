@@ -18,13 +18,14 @@ struct Typer {
 
 	void type_check_variable_declaration(Ast_Declaration *decl);
 
+	void resolve_function_type(Ast_Function *function);
 	void type_check_function(Ast_Function *function);
 
 	void infer_type(Ast_Expression *expression);
 	Ast_Type_Info *resolve_type_info(Ast_Type_Info *type_info);
     void resolve_type_force(Ast_Type_Info **type_info);
 
-	bool compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *args, Array<Ast_Type_Info *> par_types, bool varags);
+	bool compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *args, Array<Ast_Type_Info *> *par_types, bool varags);
 
 	Ast_Expression *check_expression_type_and_cast(Ast_Expression *expression, Ast_Type_Info *other_type);
 

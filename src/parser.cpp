@@ -44,7 +44,10 @@ Parser::Parser(Compiler *compiler, Lexer *lexer) {
 void Parser::parse() {
 	Token *t;
 	while ((t = peek())->type != Token::END_OF_FILE) {
-		current_scope->declarations.add(parse_global());
+		Ast_Expression *stmt = parse_global();
+
+		current_scope->declarations.add(stmt);
+		current_scope->statements.add(stmt);
 	}
 }
 
@@ -268,6 +271,8 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 				return fn;
 			}
 
+			current_scope->statements.add(statement_or_declaration);
+
 			switch (statement_or_declaration->type) {
 			case Ast::DECLARATION:
 			case Ast::STRUCT:
@@ -277,7 +282,6 @@ Ast_Function *Parser::parse_function_declaration(bool is_extern) {
 				current_scope->declarations.add(statement_or_declaration);
 				break;
 			default:
-				current_scope->statements.add(statement_or_declaration);
 				break;
 
 			}
@@ -414,7 +418,7 @@ Ast_Expression *Parser::parse_directive() {
 		}
 	}
 
-	compiler->directives.add(directive);
+	compiler->handle_directive(directive);
 	return directive;
 }
 
@@ -506,6 +510,8 @@ Ast_Expression *Parser::parse_declaration_or_statement(bool expect_semicolon) {
 				return scope;
 			}
 
+			current_scope->statements.add(statement_or_declaration);
+
 			switch (statement_or_declaration->type) {
 				case Ast::DECLARATION:
 				case Ast::STRUCT:
@@ -515,7 +521,6 @@ Ast_Expression *Parser::parse_declaration_or_statement(bool expect_semicolon) {
 					current_scope->declarations.add(statement_or_declaration);
 					break;
 				default:
-					current_scope->statements.add(statement_or_declaration);
 					break;
 
 			}

@@ -1,12 +1,24 @@
 #use "libc";
-#use "array";
 #use "glfw";
 
 func main() s32 {
-	if !glfwInit() {
-	}
+    if !glfwInit() {
+        printf("Failed to initalize GLFW".data);
+        return 0;
+    }
 
-    win := glfwCreateWindow(600, 480, "Test".data, nil, nil);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+
+    win := glfwCreateWindow(640, 480, "Test".data, nil, nil);
+
+    if !win {
+        printf("Failed to create window".data);
+        glfwTerminate();
+        return 0;
+    }
+
+    printf("Success".data);
 
     glfwMakeContextCurrent(win);
 
@@ -16,5 +28,7 @@ func main() s32 {
         glfwSwapBuffers(win);
     }
 
-	return 0;
+    glfwTerminate();
+
+    return 0;
 }

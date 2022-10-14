@@ -61,7 +61,6 @@ struct Compiler {
 	Atom *atom_it;
 	Atom *atom_it_index;
 
-	Array<Ast_Directive *> directives;
 	Array<String> definitions;
 
 	String stdlib_path;
@@ -85,6 +84,7 @@ struct Compiler {
 	void report_error(Ast *ast, const char *fmt, ...);
 
 	void init_definitions();
+	void handle_directive(Ast_Directive *directive);
 
 	String get_line(Source_Location location);
 };
