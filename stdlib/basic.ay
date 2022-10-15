@@ -1,0 +1,3 @@
+alias int s32;
+alias uint u32;
+alias float f32;

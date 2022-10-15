@@ -26,7 +26,6 @@ const char *operator_chars = "+-=*/();,.{}&|:<>![]@%^#";
 const char *keyword_tokens[] = {
 	"return",
 	"extern",
-	"as",
 	"true",
 	"false",
 	"if",
@@ -60,7 +59,6 @@ const char *keyword_tokens[] = {
 const Token::Type keyword_token_types[] = {
 	Token::RETURN,
 	Token::EXTERN,
-	Token::AS,
 	Token::TRUE,
 	Token::FALSE,
 	Token::IF,

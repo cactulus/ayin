@@ -351,6 +351,10 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 					var->setInitializer(init);
 				} else {
 					var->setExternallyInitialized(false);
+
+					if (type_is_function(decl->type_info) || type_is_pointer(decl->type_info)) {
+						var->setInitializer(ConstantPointerNull::get(static_cast<PointerType *>(decl_type)));
+					}
 				}
 
 				decl->llvm_reference = var;
@@ -468,6 +472,8 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
                 }
             } else if (type_is_pointer(src) && type_is_pointer(dst)) {
                 return irb->CreatePointerCast(value, dst_type);
+			} else if (type_is_pointer(src) && type_is_function(dst)) {
+				return irb->CreatePointerCast(value, dst_type);
 			}
 
 			return load(cast, value);
@@ -488,7 +494,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				FunctionType *fun_type = static_cast<FunctionType *>(convert_type(call->identifier->type_info));
 
 				auto loaded = load(decl, decl->llvm_reference);
-				call_inst = irb->CreateCall(fun_type, loaded, ArrayRef<Value *>(arguments.data, arguments.length));
+				call_inst = irb->CreateCall(loaded, ArrayRef<Value *>(arguments.data, arguments.length));
 			} else {
 				Function *fun = get_or_create_function(call->resolved_function);
 				call_inst = irb->CreateCall(fun, ArrayRef<Value *>(arguments.data, arguments.length));
@@ -995,6 +1001,7 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
 Value *LLVM_Converter::lalloca(Type *ty) {
 	AllocaInst *lalloca = irb->CreateAlloca(ty);
 	lalloca->setAlignment(ABI_TYPE_ALIGN(ty));
+	
 	return lalloca;
 }
 
@@ -1006,7 +1013,7 @@ Value *LLVM_Converter::load(Ast_Expression *expr, Value *value) {
 	if (options->debug) {
 		debug.add_inst(expr, load);
 	}
-
+	
 	return load;
 }
 
@@ -1014,7 +1021,7 @@ Value *LLVM_Converter::store(Ast_Expression *expr, Value *value, Value *ptr) {
 	Type *ty = value->getType();
 	StoreInst *store = irb->CreateStore(value, ptr);
 	store->setAlignment(ABI_TYPE_ALIGN(ty));
-
+	
 	if (options->debug) {
 		debug.add_inst(expr, store);
 	}

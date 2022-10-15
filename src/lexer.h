@@ -51,7 +51,6 @@ struct Token {
 
 		RETURN,
 		EXTERN,
-		AS,
 		TRUE,
 		FALSE,
 		IF,

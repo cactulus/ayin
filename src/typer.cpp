@@ -834,6 +834,8 @@ Ast_Expression *Typer::check_expression_type_and_cast(Ast_Expression *expression
 					maybe_casted = make_cast(maybe_casted, ltype);
 				}
 			}
+		} else if (type_is_function(ltype) && type_is_pointer(rtype)) {
+			maybe_casted = make_cast(maybe_casted, ltype);
 		}
 	}
 
