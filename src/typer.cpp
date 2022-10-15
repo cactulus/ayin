@@ -836,6 +836,11 @@ Ast_Expression *Typer::check_expression_type_and_cast(Ast_Expression *expression
 			}
 		} else if (type_is_function(ltype) && type_is_pointer(rtype)) {
 			maybe_casted = make_cast(maybe_casted, ltype);
+		} else if (type_is_int(ltype) && type_is_bool(rtype)) {
+			maybe_casted = make_cast(maybe_casted, ltype);
+		} else if (types_match(ltype, compiler->type_string_data) && type_is_string(rtype)) {
+			maybe_casted = make_member(maybe_casted, compiler->atom_data);
+			infer_type(maybe_casted);
 		}
 	}
 

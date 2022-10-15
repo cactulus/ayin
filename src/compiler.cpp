@@ -517,11 +517,11 @@ void type_to_string_builder(Ast_Type_Info *type, String_Builder *builder) {
             builder->putchar('void');
         } break;
         case Ast_Type_Info::BOOL: {
-            builder->putchar('bool');
+            builder->append(to_string("bool"));
         } break;
         case Ast_Type_Info::INT: {
-            if (type->is_signed) builder->append(to_string("signed"));
-            else builder->append(to_string("unsigned"));
+            if (type->is_signed) builder->append(to_string("signed "));
+            else builder->append(to_string("unsigned "));
 
             builder->print("%d", type->size * 8);
             builder->append(to_string("-bit integer"));

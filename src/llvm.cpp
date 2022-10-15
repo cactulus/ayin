@@ -474,6 +474,12 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
                 return irb->CreatePointerCast(value, dst_type);
 			} else if (type_is_pointer(src) && type_is_function(dst)) {
 				return irb->CreatePointerCast(value, dst_type);
+			} else if (type_is_bool(src) && type_is_int(dst)) {
+				if (dst->is_signed) {
+					return irb->CreateSExt(value, dst_type);
+				} else {
+					return irb->CreateZExt(value, dst_type);
+				}
 			}
 
 			return load(cast, value);
