@@ -797,12 +797,22 @@ Ast_Expression *Parser::parse_primary() {
 Ast_Literal *Parser::parse_literal() {
 	auto t = peek();
 
+	/* temporary solution to having negative numbers also in compound literals which calls this function directly */
+	bool negate = expect('-');
+	if (negate) {
+		next();
+		t = peek();
+	}
+
 	if (expect(Token::INT_LIT)) {
 		Ast_Literal *lit = AST_NEW(Ast_Literal);
 		next();
 
 		lit->literal_type = Ast_Literal::INT;
 		lit->int_value = t->int_value;
+		if (negate) {
+			lit->int_value = -t->int_value;
+		}
 		return lit;
 	}
 
@@ -812,6 +822,9 @@ Ast_Literal *Parser::parse_literal() {
 
 		lit->literal_type = Ast_Literal::FLOAT;
 		lit->float_value = t->float_value;
+		if (negate) {
+			lit->float_value = -t->float_value;
+		}
 		return lit;
 	}
 	
