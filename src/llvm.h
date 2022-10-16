@@ -5,6 +5,7 @@ namespace llvm {
 	class Module;
 	class LLVMContext;
 
+	class Constant;
 	class Value;
 	class Type;
 	class Instruction;
@@ -83,6 +84,8 @@ struct LLVM_Converter {
 	llvm::Type *type_f64;
 	llvm::StructType *type_string;
 
+	s32 global_constants_count = 0;
+
 	LLVM_Converter(Compiler *compiler);
 
 	void convert(Ast_Scope *scope);
@@ -96,6 +99,9 @@ struct LLVM_Converter {
 	llvm::Type *convert_type(Ast_Type_Info *type_info);
 
 	void convert_function(Ast_Function *fun);
+
+	llvm::Value *gen_constant_compound_lit_var(Ast_Literal *lit);
+	llvm::Constant *gen_constant_compound_lit(Ast_Literal *lit);
 
 	void optimize();
 	void emit_llvm_ir();

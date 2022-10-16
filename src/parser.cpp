@@ -651,16 +651,14 @@ Ast_Expression *Parser::parse_unary() {
 		auto cast = AST_NEW(Ast_Cast);
 		next();
 
-        if (!expect_eat('(')) {
-        	compiler->report_error(peek(), "Expected '('");
-        	return cast;
-		}
+		cast->target_type = 0;
+        if (expect_eat('(')) {
+			cast->target_type = parse_type_specifier();
 
-		cast->target_type = parse_type_specifier();
-        
-        if (!expect_eat(')')) {
-        	compiler->report_error(peek(), "Expected ')'");
-			return cast;
+			if (!expect_eat(')')) {
+				compiler->report_error(peek(), "Expected ')'");
+				return cast;
+			}
 		}
 
 		cast->expression = parse_expression();
@@ -841,6 +839,27 @@ Ast_Literal *Parser::parse_literal() {
 
 		lit->literal_type = Ast_Literal::BOOL;
 		lit->int_value = 0;
+		return lit;
+	}
+
+	if (expect('{')) {
+		Ast_Literal *lit = AST_NEW(Ast_Literal);
+		next();
+
+		lit->literal_type = Ast_Literal::COMPOUND;
+
+		while (!expect_eat('}')) {
+			lit->values.add(parse_literal());
+
+			if (!expect('}')) {
+				if (!expect_eat(',')) {
+					compiler->report_error(peek(), "Expected ','");
+				}
+			}
+	 	}
+
+		lit->compound_type_info = parse_type_specifier();
+
 		return lit;
 	}
 

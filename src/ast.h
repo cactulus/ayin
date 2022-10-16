@@ -168,6 +168,8 @@ struct Ast_Type_Info {
 	/* is dynamic array */
 	bool is_dynamic = false;
 
+	bool auto_cast = false;
+
 	/* size in bytes for int and float */
 	s32 size = 0;
 };
@@ -288,13 +290,17 @@ struct Ast_Literal : Ast_Expression {
 		FLOAT,
 		INT,
 		STRING,
-		NIL
+		NIL,
+		COMPOUND
 	};
 
 	Literal_Type literal_type;
 	s64 int_value;
 	f64 float_value;
 	String string_value;
+
+	Array<Ast_Expression *> values;
+	Ast_Type_Info *compound_type_info;
 
 	Ast_Literal() {
 		type = Ast::LITERAL;

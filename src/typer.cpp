@@ -50,8 +50,12 @@ void Typer::type_check_statement(Ast_Expression *stmt) {
 		} break;
 		case Ast::STRUCT: {
 			auto strct = static_cast<Ast_Struct *>(stmt);
+
+			int i = 0;
 			for (auto decl : strct->members) {
 				type_check_variable_declaration(decl);
+				strct->type_info->struct_members[i] = decl->type_info;
+				i++;
 			}
 		} break;
 		case Ast::RETURN: {
@@ -135,7 +139,8 @@ void Typer::type_check_statement(Ast_Expression *stmt) {
 
 				auto upper_type = _for->upper_range_expression->type_info;
 
-				check_expression_type_and_cast(init_expr, upper_expr->type_info);
+				init_expr = check_expression_type_and_cast(init_expr, upper_expr->type_info);
+				_for->initial_iterator_expression = init_expr;
 
 				init_type = _for->initial_iterator_expression->type_info;
 				if (!type_is_int(upper_type)) {
@@ -318,6 +323,48 @@ void Typer::infer_type(Ast_Expression *expression) {
 		case Ast_Literal::NIL:
 			lit->type_info = compiler->type_void_ptr;
 			break;
+		case Ast_Literal::COMPOUND: {
+			lit->type_info = lit->compound_type_info;
+
+			resolve_type_force(&lit->type_info);
+			Ast_Type_Info *ty = lit->type_info;
+
+			if (type_is_struct(ty)) {
+				if (lit->values.length != ty->struct_members.length) {
+					compiler->report_error(lit, "Compound literal does not match struct type");
+				}
+				for (int i = 0; i < lit->values.length; ++i) {
+					infer_type(lit->values[i]);
+					auto val_type = lit->values[i]->type_info;
+					auto field_type = ty->struct_members[i];
+					if (!types_match(val_type, field_type)) {
+						compiler->report_error(lit->values[i], "Compound literal does not match struct type");
+					}
+				}
+			} else if (type_is_array(ty)) {
+				auto arr_type = ty->element_type;
+
+				if (!ty->is_dynamic) {
+					if (ty->array_size == -1) {
+						ty->array_size = lit->values.length;
+					} else if (ty->array_size != lit->values.length) {
+						compiler->report_error(lit, "Number of values in compound literal does not match array type");
+					}
+				} else {
+					compiler->report_error(lit, "Compound literal is invalid for dynamic arrays");
+				}
+
+				for (int i = 0; i < lit->values.length; ++i) {
+					infer_type(lit->values[i]);
+					auto val_type = lit->values[i]->type_info;
+					if (!types_match(val_type, arr_type)) {
+						compiler->report_error(lit->values[i], "Compound literal does not match array type");
+					}
+				}
+			} else {
+				compiler->report_error(lit, "Illegal type for compound literal.\nExpected struct or array type!");
+			}
+		} break;
 		}
 	} break;
 	case Ast_Expression::IDENTIFIER: {
@@ -344,7 +391,14 @@ void Typer::infer_type(Ast_Expression *expression) {
 	case Ast_Expression::CAST: {
 		Ast_Cast *cast = static_cast<Ast_Cast *>(expression);
 		infer_type(cast->expression);
-		cast->type_info = cast->target_type;
+
+		if (cast->target_type) {
+			cast->type_info = cast->target_type;
+		} else {
+			cast->type_info = cast->expression->type_info;
+			cast->type_info->auto_cast = true;
+			cast->target_type = cast->type_info;
+		}
 
 		resolve_type_force(&cast->type_info);
 	} break;
@@ -825,22 +879,32 @@ Ast_Expression *Typer::check_expression_type_and_cast(Ast_Expression *expression
 			maybe_casted = make_cast(maybe_casted, ltype);
 		} else if (type_is_float(ltype) && type_is_int(rtype)) {
 			maybe_casted = make_cast(maybe_casted, ltype);
+		} else if (type_is_int(ltype) && type_is_float(rtype) && rtype->auto_cast) {
+			maybe_casted = make_cast(maybe_casted, ltype);
 		} else if (type_is_pointer(ltype) && type_is_pointer(rtype)) {
-			if (type_points_to_void(ltype)) {
+			if (type_points_to_void(ltype) || type_points_to_void(rtype)) {
 				auto llevel = get_pointer_level(ltype);
-				auto rlevel = get_pointer_level(rtype);
+				auto rlevel = get_pointer_level(rtype);  
 
-				if (llevel == rlevel) {
+				if ((llevel == rlevel) || rtype->auto_cast) {
 					maybe_casted = make_cast(maybe_casted, ltype);
 				}
+			} else if (rtype->auto_cast) {
+				maybe_casted = make_cast(maybe_casted, ltype);
 			}
 		} else if (type_is_function(ltype) && type_is_pointer(rtype)) {
 			maybe_casted = make_cast(maybe_casted, ltype);
 		} else if (type_is_int(ltype) && type_is_bool(rtype)) {
 			maybe_casted = make_cast(maybe_casted, ltype);
+		} else if (type_is_bool(ltype) && type_is_int(rtype)) {
+			maybe_casted = make_cast(maybe_casted, ltype);
 		} else if (types_match(ltype, compiler->type_string_data) && type_is_string(rtype)) {
 			maybe_casted = make_member(maybe_casted, compiler->atom_data);
 			infer_type(maybe_casted);
+		} else if (type_is_array(ltype) && type_is_array(rtype)) {
+			if (types_match(ltype->element_type, rtype->element_type) && !ltype->is_dynamic && !rtype->is_dynamic && ltype->array_size == -1) {
+				maybe_casted = make_cast(maybe_casted, ltype);
+			}
 		}
 	}
 
@@ -1162,7 +1226,11 @@ void Typer::mangle_type(String_Builder *builder, Ast_Type_Info *type) {
 		mangle_type(builder, type->element_type);
 		builder->putchar('_');
 	} break;
-	default: assert(0);
+	default: 
+		String unresolved = type->unresolved_name->atom->id;
+		printf("Tried to mangle unresolved type %.*s %d\n", unresolved.length, unresolved.data);
+
+		assert(0);
 	}
 }
 

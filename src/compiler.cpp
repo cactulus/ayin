@@ -514,7 +514,7 @@ void type_to_string_builder(Ast_Type_Info *type, String_Builder *builder) {
             type_to_string_builder(type->element_type, builder);
         } break;
         case Ast_Type_Info::VOID_TYPE: {
-            builder->putchar('void');
+            builder->append(to_string("void"));
         } break;
         case Ast_Type_Info::BOOL: {
             builder->append(to_string("bool"));

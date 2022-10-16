@@ -366,8 +366,24 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				}
 
 				if (decl->initializer) {
-					auto value = convert_expression(decl->initializer);
-					store(decl, value, var);
+					if (decl->initializer->type == Ast_Expression::LITERAL && 
+						static_cast<Ast_Literal *>(decl->initializer)->literal_type == Ast_Literal::COMPOUND) {
+		
+						auto value = gen_constant_compound_lit_var(static_cast<Ast_Literal *>(decl->initializer));
+
+						auto ptr_ty = PointerType::get(type_i8, 0);
+						auto target = irb->CreateBitCast(var, ptr_ty);
+						auto constant_value = irb->CreateBitCast(value, ptr_ty);
+
+						auto target_align = ABI_TYPE_ALIGN(target->getType());
+						auto value_align = ABI_TYPE_ALIGN(constant_value->getType());
+
+						auto copy_size = ConstantInt::get(type_i32, llvm_module->getDataLayout().getTypeAllocSize(decl_type));
+						irb->CreateMemCpy(target, target_align, constant_value, value_align, copy_size);
+					} else {
+						auto value = convert_expression(decl->initializer);
+						store(decl, value, var);
+					}
 				} else {
 					store(decl, Constant::getNullValue(decl_type), var);
 				}
@@ -378,7 +394,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 		} break;
 		case Ast_Expression::LITERAL: {
 			Ast_Literal *literal = static_cast<Ast_Literal *>(expression);
-			Type *ty = convert_type(expression->type_info);
+			Type *ty = convert_type(literal->type_info);
 
 			switch (literal->literal_type) {
 				case Ast_Literal::BOOL:
@@ -400,6 +416,9 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				}
 				case Ast_Literal::NIL: {
 					return ConstantPointerNull::get(static_cast<PointerType *>(convert_type(literal->type_info)));
+				}
+				case Ast_Literal::COMPOUND: {
+					return gen_constant_compound_lit(literal);
 				}
 				default:
 					assert(0 && "LLVM emission for literal type not implemented");
@@ -431,47 +450,59 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 		}
 		case Ast_Expression::CAST: {
 			Ast_Cast *cast = static_cast<Ast_Cast *>(expression);
-            Value *value = convert_expression(cast->expression, is_lvalue);
             
             auto src = cast->expression->type_info;
             auto dst = cast->type_info;
             
             auto src_type = convert_type(src);
             auto dst_type = convert_type(dst);
-            if (type_is_int(src) && type_is_int(dst)) {
-                if (src->size > dst->size) {
-                    return irb->CreateTrunc(value, dst_type);
-                } else if (src->size < dst->size) {
-                    if (src->is_signed && dst->is_signed) {
-                        return irb->CreateSExt(value, dst_type);
-                    } else {
-                        return irb->CreateZExt(value, dst_type);
-                    }
-                }
-                
-                return value;
-            } else if (type_is_float(src) && type_is_float(dst)) {
-                if (src->size < dst->size) {
-                    return irb->CreateFPExt(value, dst_type);
-                } else if (src->size > dst->size) {
-                    return irb->CreateFPTrunc(value, dst_type);
-                }
-                
-                return value;
-            } else if (type_is_float(src) && type_is_int(dst)) {
-                if (dst->is_signed) {
-                    return irb->CreateFPToSI(value, dst_type);
-                } else {
-                    return irb->CreateFPToUI(value, dst_type);
-                }
-            } else if (type_is_int(src) && type_is_float(dst)) {
-                if (src->is_signed) {
-                    return irb->CreateSIToFP(value, dst_type);
-                } else {
-                    return irb->CreateUIToFP(value, dst_type);
-                }
-            } else if (type_is_pointer(src) && type_is_pointer(dst)) {
-                return irb->CreatePointerCast(value, dst_type);
+			if (type_is_array(src) && type_is_array(dst)) {
+				/* has to be from constant to static array */
+				Value *value = convert_expression(cast->expression, true);
+
+				Value *zero = ConstantInt::get(type_i64, 0);
+				Value *ref = gep(cast->expression, value, { zero, zero });
+
+				Value *converted = irb->CreateInsertValue(UndefValue::get(dst_type), ref, 0);
+				converted = irb->CreateInsertValue(converted, ConstantInt::get(type_i64, src->array_size), 1);
+				return converted;
+			}
+			Value *value = convert_expression(cast->expression, is_lvalue);
+
+			if (type_is_int(src) && type_is_int(dst)) {
+				if (src->size > dst->size) {
+					return irb->CreateTrunc(value, dst_type);
+				} else if (src->size < dst->size) {
+					if (src->is_signed && dst->is_signed) {
+						return irb->CreateSExt(value, dst_type);
+					} else {
+						return irb->CreateZExt(value, dst_type);
+					}
+				}
+
+				return value;
+			} else if (type_is_float(src) && type_is_float(dst)) {
+				if (src->size < dst->size) {
+					return irb->CreateFPExt(value, dst_type);
+				} else if (src->size > dst->size) {
+					return irb->CreateFPTrunc(value, dst_type);
+				}
+
+				return value;
+			} else if (type_is_float(src) && type_is_int(dst)) {
+				if (dst->is_signed) {
+					return irb->CreateFPToSI(value, dst_type);
+				} else {
+					return irb->CreateFPToUI(value, dst_type);
+				}
+			} else if (type_is_int(src) && type_is_float(dst)) {
+				if (src->is_signed) {
+					return irb->CreateSIToFP(value, dst_type);
+				} else {
+					return irb->CreateUIToFP(value, dst_type);
+				}
+			} else if (type_is_pointer(src) && type_is_pointer(dst)) {
+				return irb->CreatePointerCast(value, dst_type);
 			} else if (type_is_pointer(src) && type_is_function(dst)) {
 				return irb->CreatePointerCast(value, dst_type);
 			} else if (type_is_bool(src) && type_is_int(dst)) {
@@ -480,8 +511,9 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				} else {
 					return irb->CreateZExt(value, dst_type);
 				}
+			} else if (type_is_int(src) && type_is_bool(dst)) {
+				return irb->CreateTrunc(value, dst_type);
 			}
-
 			return load(cast, value);
 		}
 		case Ast::CALL: {
@@ -910,6 +942,40 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 			return;
 		}
 	}
+}
+
+Value *LLVM_Converter::gen_constant_compound_lit_var(Ast_Literal *lit) {
+	Type *ty = convert_type(lit->type_info);
+
+	auto constant_val_name = "const_data" + std::to_string(global_constants_count++);
+
+	llvm_module->getOrInsertGlobal(constant_val_name, ty);
+	auto var = llvm_module->getGlobalVariable(constant_val_name);
+
+	var->setConstant(true);
+
+	var->setInitializer(gen_constant_compound_lit(lit));
+
+	return var;
+}
+
+Constant *LLVM_Converter::gen_constant_compound_lit(Ast_Literal *lit) {
+	Type *ty = convert_type(lit->type_info);
+
+	auto values = lit->values;
+	std::vector<Constant *> constants;
+	for (int i = 0; i < values.length; ++i) {
+		constants.push_back(static_cast<Constant *>(convert_expression(values[i])));
+	}
+
+	Constant *constant_value;
+	if (type_is_array(lit->type_info)) {
+		constant_value = ConstantArray::get(static_cast<ArrayType *>(ty), constants);
+	} else {
+		constant_value = ConstantStruct::get(static_cast<StructType *>(ty), constants);
+	}
+
+	return constant_value;
 }
 
 void LLVM_Converter::optimize() {
