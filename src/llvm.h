@@ -70,6 +70,7 @@ struct LLVM_Converter {
 	llvm::IRBuilder<llvm::ConstantFolder, llvm::IRBuilderDefaultInserter> *irb;
 
 	llvm::Function *current_function = 0;
+	llvm::BasicBlock *current_entry = 0;
 
 	Array<llvm::BasicBlock *> continue_blocks;
 	Array<llvm::BasicBlock *> break_blocks;

@@ -15,3 +15,7 @@ extern func fseek(file: *FILE, offset: s32, origin: s32);
 extern func malloc(size: u64) *void;
 extern func free(ptr: *void);
 extern func memcpy(dest: *void, src: *void, count: u64);
+extern func memset(dest: *void, c: s32, n: u64);
+
+extern func system(string: *u8) s32;
+extern func exit(status: s32);

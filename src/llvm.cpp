@@ -354,6 +354,10 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 
 					if (type_is_function(decl->type_info) || type_is_pointer(decl->type_info)) {
 						var->setInitializer(ConstantPointerNull::get(static_cast<PointerType *>(decl_type)));
+					} else if (type_is_array(decl->type_info)) {
+						if (!decl->type_info->is_dynamic && decl->type_info->array_size != -1) {
+							var->setInitializer(ConstantArray::getNullValue(decl_type));
+						}
 					}
 				}
 
@@ -632,7 +636,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 				return element;
 			}
             
-            auto element = gep(array_index, array, {ConstantInt::get(type_i32, 0), index});
+            auto element = gep(array_index, array, {ConstantInt::get(type_i64, 0), index});
             
             if (!is_lvalue) return load(array_index, element);
             return element;
@@ -907,6 +911,7 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 
 	BasicBlock *entry_block = BasicBlock::Create(*llvm_context, "", fn);
 	irb->SetInsertPoint(entry_block);
+	current_entry = entry_block;
 
 	if (options->debug) {
 		debug.add_function(fun, fn);
@@ -927,6 +932,10 @@ void LLVM_Converter::convert_function(Ast_Function *fun) {
 
 		++i;
 	}
+
+	BasicBlock *starting_block = BasicBlock::Create(*llvm_context, "", fn);
+	irb->CreateBr(starting_block);
+	irb->SetInsertPoint(starting_block);
 
 	convert_scope(fun->block_scope);
 
@@ -1071,9 +1080,17 @@ Function *LLVM_Converter::get_or_create_function(Ast_Function *function) {
 }
 
 Value *LLVM_Converter::lalloca(Type *ty) {
+	auto block = irb->GetInsertBlock();
+
+	if (current_entry->getTerminator()) {
+		irb->SetInsertPoint(current_entry->getTerminator());
+	}
+	
 	AllocaInst *lalloca = irb->CreateAlloca(ty);
 	lalloca->setAlignment(ABI_TYPE_ALIGN(ty));
 	
+	irb->SetInsertPoint(block);
+
 	return lalloca;
 }
 
