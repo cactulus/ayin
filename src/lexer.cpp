@@ -394,7 +394,8 @@ void read_hex_number(Lexer *l, Token *t) {
 
 	t->type = Token::INT_LIT;
 	t->lexeme = num;
-	t->int_value = std::strtol(to_c_string(num), 0, 16);
+
+	t->int_value = std::strtoll(to_c_string(num), 0, 16);
 }
 
 bool is_ident_char(char c) {

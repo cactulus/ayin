@@ -1125,6 +1125,7 @@ glDrawTransformFeedbackStream: (GLenum, GLuint, GLuint) void;
 glBeginQueryIndexed: (GLenum, GLuint, GLuint) void;
 glEndQueryIndexed: (GLenum, GLuint) void;
 glGetQueryIndexediv: (GLenum, GLuint, GLenum, *GLint) void;
+glTexStorage3D: (GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei) void;
 
 extern func wglGetProcAddress(name: *u8) *void;
 extern func LoadLibraryA(module: *u8) *void;
@@ -1575,4 +1576,5 @@ func opengl_init() {
 	glBeginQueryIndexed = get_opengl_fn("glBeginQueryIndexed");
 	glEndQueryIndexed = get_opengl_fn("glEndQueryIndexed");
 	glGetQueryIndexediv = get_opengl_fn("glGetQueryIndexediv");
+	glTexStorage3D = get_opengl_fn("glTexStorage3D");
 }

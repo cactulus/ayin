@@ -612,6 +612,7 @@ Value *LLVM_Converter::convert_expression(Ast_Expression *expression, bool is_lv
 			Ast_Index *array_index = static_cast<Ast_Index *>(expression);
 			auto array = convert_expression(array_index->expression, true);
             auto index = convert_expression(array_index->index);
+			index = irb->CreateSExt(index, type_i64);
             
             auto type = array_index->expression->type_info;
             if (type_is_array(type) && type->array_size == -1) {

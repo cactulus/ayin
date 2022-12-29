@@ -436,6 +436,8 @@ void Typer::infer_type(Ast_Expression *expression) {
 			call->type_info = cit->return_type;
 
 			if (!compare_arguments(call->identifier, &call->arguments, &cit->parameters, false)) {
+				compiler->report_error(call, "Argument count does not match parameter count");
+
 				return;
 			}
 		} else {
@@ -448,6 +450,8 @@ void Typer::infer_type(Ast_Expression *expression) {
 				call->resolved_function = function;
 
 				if (!compare_arguments(call->identifier, &call->arguments, &function->type_info->parameters, function->flags & FUNCTION_VARARG)) {
+					compiler->report_error2(call->location, "Argument count does not match parameter count", function->location, "Parameters declared here");
+
 					return;
 				}
 			}
@@ -815,7 +819,6 @@ bool Typer::compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *arg
 	auto par_count = par_types->length;
 
 	if (par_count > args->length) {
-		compiler->report_error(call, "Arguments count does not match parameter count");
 		return false;
 	}
 
@@ -825,7 +828,6 @@ bool Typer::compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *arg
 				infer_type((*args)[i]);
 				continue;
 			} else {
-				compiler->report_error(call, "Arguments count does not match parameter count");
 				return false;
 			}
 		}
@@ -848,6 +850,7 @@ bool Typer::compare_arguments(Ast_Identifier *call, Array<Ast_Expression *> *arg
 				arg_ty_str.length, arg_ty_str.data,
 				par_ty_str.length, par_ty_str.data
 			);
+			/* TODO: return false leads to compiler->report_error called by caller on argument count mismatch */
 			return false;
 		}
 	}
@@ -936,7 +939,8 @@ Ast_Function *Typer::get_polymorph_function(Ast_Call *call, Ast_Function *templa
 		bool does_match = true;
 
 		if (call->arguments.length != template_function->parameter_scope->declarations.length) {
-			compiler->report_error(call, "Argument count does not match parameter count");
+			compiler->report_error2(call->location, "Argument count does not match parameter count", template_function->location, "Parameters declared here");
+
 			return template_function;
 		}
 
