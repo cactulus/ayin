@@ -45,7 +45,7 @@ Possible backends in the future:
 #use "libc"
 
 /* include other file */
-#include "other-file.ay
+#include "other-file.ay"
 
 /* conditionals at compile time */
 /* #if <condition> <statement>
