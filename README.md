@@ -52,7 +52,6 @@ Possible backends in the future:
  * if platform is windows, then include the following,
  * else include the following */
 #if windows ... #else ...
-*/
 
 /* extern functions, varags */
 extern func printf(fmt: *u8, ...) s32;
